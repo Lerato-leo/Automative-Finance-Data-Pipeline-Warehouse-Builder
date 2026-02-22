@@ -2,17 +2,12 @@
 
 ```mermaid
 flowchart LR
-	A[Raw Data<br>(Bronze)] -->|Ingestion| B[Staging<br>(Silver)]
-	B -->|Transformation| C[Warehouse<br>(Gold)]
-	C -->|Analytics/BI| D[Analytics & Reporting]
-	A -.->|Archive| E[Archive Storage]
+	A["Raw Data (Bronze)"] -->|Ingestion| B["Staging (Silver)"]
+	B -->|Transformation| C["Warehouse (Gold)"]
+	C -->|Analytics/BI| D["Analytics & Reporting"]
+	A -.->|Archive| E["Archive Storage"]
 	B -.->|Archive| E
 	C -.->|Archive| E
-	style A fill:#cfc,stroke:#333,stroke-width:2px
-	style B fill:#ccf,stroke:#333,stroke-width:2px
-	style C fill:#ffc,stroke:#333,stroke-width:2px
-	style D fill:#fcf,stroke:#333,stroke-width:2px
-	style E fill:#eee,stroke:#333,stroke-width:2px
 ```
 
 # Automotive Finance Data Pipeline & Warehouse Builder
