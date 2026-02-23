@@ -59,31 +59,53 @@ Raw data is stored in AWS S3 buckets representing enterprise data lake storage:
 - **Warehouse (Gold):** star schema fact + dimension tables.
 - **Archive:** historical backups.
 
+
 ## Data Warehouse Modeling
-The warehouse follows a Star Schema design:
+The warehouse follows a Star Schema design, supporting operational, financial, and predictive analytics for analysts, executives, and data scientists.
 
 ### Fact Tables
-- fact_sales
-- fact_payments
-- fact_procurement
-- fact_inventory
-- fact_telemetry
-- fact_interactions
+- **fact_sales**: Vehicle sales transactions (dealer, customer, vehicle, price, discount, channel, status)
+- **fact_payments**: Payment transactions (sale, amount, method, status, reference)
+- **fact_procurement**: Supplier procurement orders (supplier, vehicle, cost, status)
+- **fact_inventory**: Inventory stock levels (vehicle, dealer, quantity, status)
+- **fact_telemetry**: IoT sensor data (vehicle, timestamp, speed, fuel, engine, location)
+- **fact_interactions**: CRM/customer interactions (customer, dealer, type, channel, outcome)
 
 ### Dimension Tables
-- dim_customer
-- dim_dealer
-- dim_vehicle
-- dim_supplier
-- dim_date
-- dim_payment_method
-- dim_interaction
+- **dim_customer**: Customer attributes (SCD Type 2)
+- **dim_dealer**: Dealer/location attributes
+- **dim_vehicle**: Vehicle attributes (make, model, year)
+- **dim_supplier**: Supplier attributes
+- **dim_date**: Calendar and financial year hierarchies
 
 **Features:**
-- Surrogate keys
-- Slowly Changing Dimensions (SCD Type 2)
-- Historical tracking
-- Financial aggregations
+- Surrogate keys for all dimensions
+- Slowly Changing Dimensions (SCD Type 2) for customer and vehicle
+- Historical tracking for all business entities
+- Financial and operational aggregations
+
+### Example Business Questions Supported
+
+#### Analysts (Operational & Performance)
+- Which dealers sold the most vehicles this quarter?
+- What is the average discount per sale?
+- How many active vs inactive customers purchased vehicles?
+- Which provinces generate the most sales?
+- Which vehicles are low stock or out of stock?
+
+#### Executives (Strategic & Financial)
+- What is total revenue by dealer, brand, or province?
+- How much revenue is lost to discounts?
+- Which vehicle types dominate sales?
+- What percentage of payments failed or are pending?
+- Which financing methods are most common?
+
+#### Data Scientists (Predictive & IoT)
+- Which customer attributes correlate with inactive status?
+- Do IoT telemetry anomalies predict maintenance events?
+- Which suppliers have frequent procurement delays or cancellations?
+
+See the full schema in [`phase_1_data_warehouse_design/sql/warehouse_schema.sql`](finance-data-platform/phase_1_data_warehouse_design/sql/warehouse_schema.sql).
 
 ## Project Phases
 - **Phase 0 — Environment Setup:** schemas, repo structure, S3 buckets.
