@@ -1,0 +1,12 @@
+# Notification Configuration Example
+
+# Teams webhook URL (no quotes, valid format)
+TEAMS_WEBHOOK=https://capeitinitiative.webhook.office.com/webhookb2/838078a6-913e-4ac5-9658-a608f089edbf@a3f14f21-237f-4028-b978-425eb768a716/IncomingWebhook/3d7704c2cbb24c79a4d225c36562bcd4/2ac8f61a-600f-4883-b435-3c80eab7c0ff/V26P_0FOqUVLolSaqXJ7uhYusOKq0C3HWzVeM5leQx7kU1
+
+# Email settings (no quotes, valid format)
+EMAIL_FROM=leratomatamela1@gmail.com
+EMAIL_TO=lerato.matamela01@gmail.com
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=lerato.matamela01@gmail.com
+SMTP_PASS=bxghqkxtcbhctzbj

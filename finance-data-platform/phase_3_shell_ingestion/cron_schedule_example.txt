@@ -1,0 +1,20 @@
+# Example cron schedule for Phase 3 ingestion scripts
+# (Linux cron format)
+
+# Monitor S3 for new files every hour
+0 * * * * /bin/bash /path/to/monitor_s3_new_files.sh
+
+# Validate files daily at 01:00
+0 1 * * * /bin/bash /path/to/validate_s3_files.sh
+
+# Move files to staging daily at 01:15
+15 1 * * * /bin/bash /path/to/move_to_staging.sh
+
+# Archive processed files daily at 01:30
+30 1 * * * /bin/bash /path/to/archive_processed_files.sh
+
+# Log rotation weekly (example)
+0 0 * * 0 /usr/bin/logrotate /path/to/logrotate.conf
+
+# Note: Update /path/to/ to your actual script locations.
+# For Windows, use Task Scheduler to run scripts at similar times.

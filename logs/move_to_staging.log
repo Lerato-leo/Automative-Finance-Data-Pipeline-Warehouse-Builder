@@ -1,0 +1,22 @@
+Mon, Feb 23, 2026 11:48:11 AM crm/ moved to staging
+Mon, Feb 23, 2026 11:48:19 AM crm/interactions/ moved to staging
+Mon, Feb 23, 2026 11:48:26 AM crm/interactions/interactions_2026.json moved to staging
+Mon, Feb 23, 2026 11:48:34 AM erp/ moved to staging
+Mon, Feb 23, 2026 11:48:41 AM erp/customers/ moved to staging
+Mon, Feb 23, 2026 11:48:49 AM erp/customers/customers_2026.xlsx moved to staging
+Mon, Feb 23, 2026 11:48:56 AM erp/dealers/ moved to staging
+Mon, Feb 23, 2026 11:49:04 AM erp/dealers/dealers_2026.xlsx moved to staging
+Mon, Feb 23, 2026 11:49:12 AM erp/sales/sales_2026.csv moved to staging
+Mon, Feb 23, 2026 11:49:20 AM erp/vehicles/ moved to staging
+Mon, Feb 23, 2026 11:49:28 AM erp/vehicles/vehicles_2026.csv moved to staging
+Mon, Feb 23, 2026 11:49:36 AM finance/ moved to staging
+Mon, Feb 23, 2026 11:49:43 AM finance/payments/ moved to staging
+Mon, Feb 23, 2026 11:49:51 AM finance/payments/payments_2026.csv moved to staging
+Mon, Feb 23, 2026 11:49:59 AM inventory/ moved to staging
+Mon, Feb 23, 2026 11:50:07 AM inventory/vehicle_inventory/inventory_2026.csv moved to staging
+Mon, Feb 23, 2026 11:50:15 AM iot/ moved to staging
+Mon, Feb 23, 2026 11:50:24 AM iot/telemetry/telemetry_2026.json moved to staging
+Mon, Feb 23, 2026 11:50:32 AM suppliers_chain/procurement/procurement_2026.csv moved to staging
+Mon, Feb 23, 2026 11:50:39 AM suppliers_chain/suppliers/suppliers_2026.csv moved to staging
+2026-02-23 15:15:20 customers.csv moved to staging
+2026-02-23 15:15:28 sales.csv moved to staging

@@ -1,0 +1,23 @@
+# Windows Task Scheduler Instructions for Phase 3 Ingestion
+
+1. Open Task Scheduler (Windows Start Menu > Task Scheduler)
+2. Click "Create Basic Task..."
+3. Name: Phase 3 S3 Ingestion
+4. Trigger: Daily (or Hourly as needed)
+5. Start: Set desired time (e.g., 01:00 AM)
+6. Action: Start a Program
+   - Program/script: C:\Windows\System32\bash.exe
+   - Add arguments: -c "/path/to/monitor_s3_new_files.sh"
+   - (Repeat for validate_s3_files.sh, move_to_staging.sh, archive_processed_files.sh)
+7. Finish and review task properties:
+   - Set "Run whether user is logged on or not"
+   - Set "Run with highest privileges"
+   - Set "Configure for" to your Windows version
+8. For log rotation:
+   - Use a PowerShell script to archive logs weekly:
+     Example:
+     powershell -Command "Compress-Archive -Path 'C:\path\to\logs\*.log' -DestinationPath 'C:\path\to\logs\archive\logs_$(Get-Date -Format yyyyMMdd).zip'; Remove-Item 'C:\path\to\logs\*.log'"
+   - Schedule this script weekly in Task Scheduler
+
+# Note: Update /path/to/ to your actual script locations.
+# Ensure bash.exe is installed (Windows Subsystem for Linux or Git Bash).

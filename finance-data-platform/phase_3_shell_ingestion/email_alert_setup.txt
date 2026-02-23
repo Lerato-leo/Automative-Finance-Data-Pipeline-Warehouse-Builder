@@ -1,0 +1,39 @@
+# Email Alert Setup for PowerShell notify.ps1
+
+## 1. SMTP Provider
+- Use Gmail, Outlook, or your company SMTP server.
+
+## 2. notification_config_example.txt (Sample for Gmail)
+EMAIL_FROM="your@gmail.com"
+EMAIL_TO="recipient@email.com"
+SMTP_SERVER="smtp.gmail.com"
+SMTP_PORT=587
+SMTP_USER="your@gmail.com"
+SMTP_PASS="your-app-password"
+
+## 3. Gmail Setup
+- Go to Google Account > Security > App Passwords
+- Generate an app password for "Mail"
+- Use this app password for SMTP_PASS
+
+## 4. PowerShell Requirements
+- Send-MailMessage is available by default in Windows PowerShell.
+
+## 5. Test Email
+- Run: powershell -File notify.ps1 Success "Test email alert"
+- Check recipient inbox.
+
+## 6. Security
+- For production, use Windows Credential Manager or environment variables for SMTP_PASS.
+
+## 7. Troubleshooting
+- If you get authentication errors, check:
+  - SMTP server and port
+  - App password (not your regular Gmail password)
+  - Less secure apps setting (for some providers)
+
+## 8. Example PowerShell Command
+Send-MailMessage -From "your@gmail.com" -To "recipient@email.com" -Subject "Test" -Body "This is a test" -SmtpServer "smtp.gmail.com" -Port 587 -Credential (New-Object System.Management.Automation.PSCredential("your@gmail.com",(ConvertTo-SecureString "your-app-password" -AsPlainText -Force))) -UseSsl
+
+## 9. Integration
+- notify.ps1 will use these settings to send alerts for ingestion success/failure.
