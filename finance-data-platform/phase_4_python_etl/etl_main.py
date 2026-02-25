@@ -2,7 +2,7 @@
 Phase 4: Python ETL Pipeline
 Extracts data from S3 staging (CSV, JSON, XLSX),
 transforms and loads into PostgreSQL staging schema.
-Resilient to schema mismatches.
+Resilient to schema mismatches and handles NULLs correctly.
 """
 
 import os
@@ -112,11 +112,11 @@ def transform(df):
         df['email'] = df['email'].str.lower()
         df = df[df['email'].str.contains('@', na=False)]
 
-    # Convert known date columns to datetime and replace NaT with None
-    for col in df.columns:
-        if 'date' in col:
-            df[col] = pd.to_datetime(df[col], errors='coerce')
-            df[col] = df[col].where(df[col].notna(), None)
+    if 'date_of_birth' in df.columns:
+        df['date_of_birth'] = pd.to_datetime(df['date_of_birth'], errors='coerce')
+
+    if 'sale_date' in df.columns:
+        df['sale_date'] = pd.to_datetime(df['sale_date'], errors='coerce')
 
     # Numeric clean
     for col in df.columns:
@@ -162,7 +162,8 @@ def upsert(df, table_key, conn):
     column_str = ",".join(cols)
 
     # Convert dataframe to list of tuples (fast)
-    values = [tuple(x) for x in df.to_numpy()]
+    # Replace NaN / NaT with None for PostgreSQL
+    values = [tuple(None if pd.isna(x) else x for x in row) for row in df.to_numpy()]
 
     sql = f"""
         INSERT INTO {target_table} ({column_str})
