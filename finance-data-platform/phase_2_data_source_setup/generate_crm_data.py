@@ -10,26 +10,33 @@ start,end=datetime(2025,3,1),datetime(2026,2,28)
 def random_date(): return start+timedelta(days=random.randint(0,(end-start).days))
 
 interactions=[]
-for i in range(350):
+for i in range(800):
     interactions.append({
         "interaction_id": f"INT{i+1:03d}",
-        "customer_id": f"CUST{random.randint(1,100):03d}",
+        "customer_id": f"CUST{random.randint(1,250):03d}",
         "interaction_type": random.choice(["Inquiry","Complaint","Test Drive","Follow-up"]),
         "interaction_channel": random.choice(["Email","Phone","In-person","Website"]),
         "interaction_date": str(random_date()),
-        "dealer_id": f"DEAL{random.randint(1,15):03d}",
+        "dealer_id": f"DEAL{random.randint(1,70):03d}",
         "employee_id": f"EMP{random.randint(1,50):03d}",
         "outcome": random.choice(["Interested","Not Interested","Purchased","No Response"]),
-        "notes": random.choice([fake.sentence(),None,""])
+        "notes": fake.sentence() if random.random() > 0.2 else None
     })
-file = os.path.join(tmp_dir, "interactions_2026.json")
-with open(file, "w") as f:
+df_interactions = pd.DataFrame(interactions)
+file_json = os.path.join(tmp_dir, "interactions_2026.json")
+with open(file_json, "w") as f:
     json.dump(interactions, f, indent=2)
-print(f"Uploading {file} to s3://{bucket}/crm/interactions/interactions_2026.json")
+print(f"Uploading {file_json} to s3://{bucket}/crm/interactions/interactions_2026/interactions_2026.json")
 try:
-    s3.upload_file(file, bucket, "crm/interactions/interactions_2026.json")
-    print(f"Success: {file} uploaded to s3://{bucket}/crm/interactions/interactions_2026.json")
-    os.remove(file)
-    print(f"Local file {file} removed.")
+    s3.upload_file(file_json, bucket, "crm/interactions/interactions_2026/interactions_2026.json")
+    print(f"Success: {file_json} uploaded to s3://{bucket}/crm/interactions/interactions_2026/interactions_2026.json")
+    os.remove(file_json)
+    print(f"Local file {file_json} removed.")
+    # Excel file
+    file_xlsx = os.path.join(tmp_dir, "interactions_2026.xlsx")
+    df_interactions.to_excel(file_xlsx, index=False)
+    s3.upload_file(file_xlsx, bucket, "crm/interactions/interactions_2026/interactions_2026.xlsx")
+    os.remove(file_xlsx)
+    print(f"Uploaded interactions_2026.xlsx to S3.")
 except Exception as e:
-    print(f"Error uploading {file} to S3: {e}")
+    print(f"Error uploading {file_json} to S3: {e}")

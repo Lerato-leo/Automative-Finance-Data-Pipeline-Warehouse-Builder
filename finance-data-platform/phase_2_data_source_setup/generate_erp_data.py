@@ -3,62 +3,117 @@ import boto3
 import random
 from faker import Faker
 from datetime import datetime, timedelta
+import os
+import tempfile
 
 # Setup Faker with default locale (for compatibility)
 fake = Faker()
 
+tmp_dir = tempfile.gettempdir()
 # Setup S3 client
 s3 = boto3.client("s3")
 bucket_name = "automotive-raw-data-lerato-2026"
 
-# Financial year range
 start_date = datetime(2025, 3, 1)
 end_date = datetime(2026, 2, 28)
-
 def random_date():
     return start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
-
 def dirty_value(value, chance=0.1):
-    """Inject dirty data: missing, incorrect format, or outlier"""
     if random.random() < chance:
         return None
     if random.random() < chance:
         return str(value) + "??"
     return value
-
-import os
-
-# Ensure /tmp directory exists
-tmp_dir = os.path.join(os.getcwd(), "tmp")
-os.makedirs(tmp_dir, exist_ok=True)
-
 def dirty_vehicle_vin(vin, chance=0.15):
     r = random.random()
     if r < chance/3:
         return None
     elif r < 2*chance/3:
-        return vin + "X" * random.randint(1, 3)  # extra chars
+        return vin + "X" * random.randint(1, 3)
     elif r < chance:
-        return vin[:5]  # too short
+        return vin[:5]
     return vin
-
 def dirty_price(price, chance=0.1):
     r = random.random()
     if r < chance/2:
-        return -abs(price)  # negative price
+        return -abs(price)
     elif r < chance:
-        return price * 100  # outlier price
+        return price * 100
     return price
-
 def dirty_date(date, chance=0.1):
     if random.random() < chance:
-        return "31-02-2025"  # impossible date
+        return "31-02-2025"
     return date
-
 def dirty_email(email, chance=0.1):
     if random.random() < chance:
         return "not-an-email"
     return email
+
+# Generate customers
+customers = []
+for i in range(250):
+    customers.append({
+        "customer_id": f"CUST{i+1:03d}",
+        "first_name": fake.first_name(),
+        "last_name": fake.last_name(),
+        "email": dirty_email(fake.email(), 0.1),
+        "created_at": random_date()
+    })
+df_customers = pd.DataFrame(customers)
+file_cust = "customers_2026.csv"
+df_customers.to_csv(file_cust, index=False)
+s3.upload_file(file_cust, bucket_name, "erp/customers/customers_2026.csv")
+os.remove(file_cust)
+
+# Generate dealers
+dealers = []
+for i in range(70):
+    dealers.append({
+        "dealer_id": f"DEAL{i+1:03d}",
+        "dealer_name": fake.company(),
+        "location": fake.city(),
+        "contact_email": dirty_email(fake.company_email(), 0.1),
+        "created_at": random_date()
+    })
+df_dealers = pd.DataFrame(dealers)
+file_deal = "dealers_2026.csv"
+df_dealers.to_csv(file_deal, index=False)
+s3.upload_file(file_deal, bucket_name, "erp/dealers/dealers_2026.csv")
+os.remove(file_deal)
+
+# Generate vehicles
+vehicles = []
+for i in range(45):
+    vehicles.append({
+        "vehicle_id": f"VEH{i+1:03d}",
+        "model": fake.word().capitalize(),
+        "dealer_id": f"DEAL{random.randint(1,70):03d}",
+        "year": random.randint(2015,2026),
+        "vin": dirty_vehicle_vin(fake.bothify(text='??#####??'), 0.15)
+    })
+df_vehicles = pd.DataFrame(vehicles)
+file_veh = "vehicles_2026.csv"
+df_vehicles.to_csv(file_veh, index=False)
+s3.upload_file(file_veh, bucket_name, "erp/vehicles/vehicles_2026.csv")
+os.remove(file_veh)
+
+# Generate sales
+sales = []
+for i in range(1500):
+    sales.append({
+        "sale_id": f"SALE{i+1:04d}",
+        "customer_id": f"CUST{random.randint(1,250):03d}",
+        "vehicle_id": f"VEH{random.randint(1,45):03d}",
+        "sale_price": dirty_price(random.randint(10000,50000), 0.1),
+        "sale_date": dirty_date(random_date(), 0.1),
+        "dealer_id": f"DEAL{random.randint(1,70):03d}",
+        "created_at": random_date()
+    })
+df_sales = pd.DataFrame(sales)
+file_sales = "sales_2026.csv"
+df_sales.to_csv(file_sales, index=False)
+s3.upload_file(file_sales, bucket_name, "erp/sales/sales_2026.csv")
+os.remove(file_sales)
 
 def maybe_duplicate(df, chance=0.1):
     if random.random() < chance:
@@ -135,10 +190,10 @@ print("Uploaded vehicles_2026.csv to S3.")
 # -----------------------------
 # Generate Dealers (15 rows)
 # -----------------------------
-
-# Generate Dealers (15 rows) with dirty emails and possible duplicates
-dealers = []
-for i in range(15):
+def maybe_duplicate(df, chance=0.1):
+    if random.random() < chance:
+        return pd.concat([df, df.sample(1)], ignore_index=True)
+    return df
     dealers.append({
         "dealer_id": f"DEAL{i+1:03d}",
         "dealer_name": fake.company(),
@@ -198,4 +253,22 @@ s3.upload_file(sales_file, bucket_name, "erp/sales/sales_2026.csv")
 os.remove(sales_file)
 print("Uploaded sales_2026.csv to S3.")
 
-print("ERP data (customers, vehicles, dealers, sales) uploaded to S3 successfully!")
+# Generate Inventory (now part of ERP)
+inventory = []
+for i in range(500):
+    inventory.append({
+        "inventory_id": f"INV{i+1:04d}",
+        "vehicle_id": f"VEH{random.randint(1,45):03d}",
+        "dealer_id": random.choice(df_dealers["dealer_id"]),
+        "quantity": random.randint(1, 100),
+        "stock_status": random.choice(["InStock","OutOfStock","Reserved"]),
+        "last_updated": random_date()
+    })
+df_inventory = pd.DataFrame(inventory)
+inventory_file = os.path.join(tmp_dir, "inventory_2026.csv")
+df_inventory.to_csv(inventory_file, index=False)
+s3.upload_file(inventory_file, bucket_name, "erp/inventory/inventory_2026/inventory_2026.csv")
+os.remove(inventory_file)
+print("Uploaded inventory_2026.csv to S3.")
+
+print("ERP data (customers, vehicles, dealers, sales, inventory) uploaded to S3 successfully!")

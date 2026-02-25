@@ -1,5 +1,0 @@
-# Idempotency Integration
-
-- Run idempotency_check.sh before move_to_staging.sh in dependency_chain.ps1
-- Only process files not already archived
-- Update dependency_chain.ps1 to call idempotency_check.sh and parse its output

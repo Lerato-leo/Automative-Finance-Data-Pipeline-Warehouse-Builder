@@ -1,142 +1,140 @@
--- ============================================================
--- PHASE 1: Staging Schema DDL (Automotive Finance)
--- Raw tables for initial S3 data loads
--- ============================================================
+-- Automotive Finance Data Platform: Staging Schema (Fresh)
+-- Created: 2026-02-24
+-- All tables reflect generator scripts, S3 structure, and Excel compatibility
 
--- Staging Payments
-CREATE TABLE staging.stg_payments (
-    payment_id VARCHAR(50),
-    sale_id VARCHAR(50),
-    payment_date VARCHAR(50),
-    payment_amount VARCHAR(50),
-    payment_method VARCHAR(50),
-    payment_status VARCHAR(50),
-    transaction_reference VARCHAR(100),
-    created_at VARCHAR(50)
+-- Customers
+CREATE TABLE staging_customers (
+    customer_id VARCHAR(64) PRIMARY KEY,
+    first_name VARCHAR(64),
+    last_name VARCHAR(64),
+    email VARCHAR(128),
+    phone VARCHAR(32),
+    address VARCHAR(256),
+    city VARCHAR(64),
+    state VARCHAR(32),
+    zip_code VARCHAR(16),
+    date_of_birth DATE,
+    created_at TIMESTAMP,
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Inventory
-CREATE TABLE staging.stg_inventory (
-    inventory_id VARCHAR(50),
-    vehicle_id VARCHAR(50),
-    dealer_id VARCHAR(50),
-    quantity VARCHAR(50),
-    stock_status VARCHAR(50),
-    last_updated VARCHAR(50)
+-- Dealers
+CREATE TABLE staging_dealers (
+    dealer_id VARCHAR(64) PRIMARY KEY,
+    dealer_name VARCHAR(128),
+    contact_name VARCHAR(64),
+    contact_email VARCHAR(128),
+    contact_phone VARCHAR(32),
+    address VARCHAR(256),
+    city VARCHAR(64),
+    state VARCHAR(32),
+    zip_code VARCHAR(16),
+    created_at TIMESTAMP,
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Suppliers
-CREATE TABLE staging.stg_suppliers (
-    supplier_id VARCHAR(50),
-    supplier_name VARCHAR(255),
-    country VARCHAR(100),
-    contact_email VARCHAR(255),
-    supplier_type VARCHAR(50),
-    status VARCHAR(50)
+-- Vehicles
+CREATE TABLE staging_vehicles (
+    vehicle_id VARCHAR(64) PRIMARY KEY,
+    vin VARCHAR(32),
+    make VARCHAR(64),
+    model VARCHAR(64),
+    year INT,
+    color VARCHAR(32),
+    dealer_id VARCHAR(64),
+    customer_id VARCHAR(64),
+    purchase_date TIMESTAMP,
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Interactions
-CREATE TABLE staging.stg_interactions (
-    interaction_id VARCHAR(50),
-    customer_id VARCHAR(50),
-    interaction_type VARCHAR(50),
-    interaction_channel VARCHAR(50),
-    interaction_date VARCHAR(50),
-    dealer_id VARCHAR(50),
-    employee_id VARCHAR(50),
-    outcome VARCHAR(50),
-    notes TEXT
+-- Sales
+CREATE TABLE staging_sales (
+    sale_id VARCHAR(64) PRIMARY KEY,
+    vehicle_id VARCHAR(64),
+    customer_id VARCHAR(64),
+    dealer_id VARCHAR(64),
+    sale_date TIMESTAMP,
+    sale_price DECIMAL(18,2),
+    payment_method VARCHAR(32),
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Telemetry
-CREATE TABLE staging.stg_telemetry (
-    telemetry_id VARCHAR(50),
-    vehicle_id VARCHAR(50),
-    timestamp VARCHAR(50),
-    speed VARCHAR(50),
-    fuel_level VARCHAR(50),
-    engine_temperature VARCHAR(50),
-    location_lat VARCHAR(50),
-    location_long VARCHAR(50)
+-- Inventory
+CREATE TABLE staging_inventory (
+    inventory_id VARCHAR(64) PRIMARY KEY,
+    dealer_id VARCHAR(64),
+    vehicle_id VARCHAR(64),
+    stock_date TIMESTAMP,
+    quantity INT,
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging ERP/Sales (example)
-
--- Staging Sales (ERP)
-CREATE TABLE staging.stg_sales (
-    sale_id VARCHAR(50),
-    sale_date VARCHAR(50),
-    customer_id VARCHAR(50),
-    vehicle_id VARCHAR(50),
-    dealer_id VARCHAR(50),
-    sale_price VARCHAR(50),
-    discount_amount VARCHAR(50),
-    final_price VARCHAR(50),
-    sale_channel VARCHAR(50),
-    sale_status VARCHAR(50),
-    created_at VARCHAR(50)
+-- Payments
+CREATE TABLE staging_payments (
+    payment_id VARCHAR(64) PRIMARY KEY,
+    sale_id VARCHAR(64),
+    customer_id VARCHAR(64),
+    payment_date TIMESTAMP,
+    amount DECIMAL(18,2),
+    payment_method VARCHAR(32),
+    status VARCHAR(32),
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Customers (ERP)
-CREATE TABLE staging.stg_customers (
-    customer_id VARCHAR(50),
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    email VARCHAR(255),
-    phone VARCHAR(50),
-    date_of_birth VARCHAR(50),
-    gender VARCHAR(20),
-    street_number VARCHAR(20),
-    street_name VARCHAR(100),
-    suburb VARCHAR(100),
-    city VARCHAR(100),
-    province VARCHAR(50),
-    postal_code VARCHAR(20),
-    country VARCHAR(50),
-    created_at VARCHAR(50),
-    status VARCHAR(20)
+-- Suppliers
+CREATE TABLE staging_suppliers (
+    supplier_id VARCHAR(64) PRIMARY KEY,
+    supplier_name VARCHAR(128),
+    contact_name VARCHAR(64),
+    contact_email VARCHAR(128),
+    contact_phone VARCHAR(32),
+    address VARCHAR(256),
+    city VARCHAR(64),
+    state VARCHAR(32),
+    zip_code VARCHAR(16),
+    created_at TIMESTAMP,
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Vehicles (ERP)
-CREATE TABLE staging.stg_vehicles (
-    vehicle_id VARCHAR(50),
-    vin VARCHAR(50),
-    make VARCHAR(50),
-    model VARCHAR(50),
-    year VARCHAR(10),
-    color VARCHAR(20),
-    engine_type VARCHAR(20),
-    transmission VARCHAR(20),
-    manufacture_country VARCHAR(50),
-    manufacture_date VARCHAR(50),
-    status VARCHAR(20),
-    created_at VARCHAR(50)
+-- Procurement
+CREATE TABLE staging_procurement (
+    procurement_id VARCHAR(64) PRIMARY KEY,
+    supplier_id VARCHAR(64),
+    dealer_id VARCHAR(64),
+    item VARCHAR(64),
+    quantity INT,
+    procurement_date TIMESTAMP,
+    cost DECIMAL(18,2),
+    status VARCHAR(32),
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Dealers (ERP)
-CREATE TABLE staging.stg_dealers (
-    dealer_id VARCHAR(50),
-    dealer_name VARCHAR(255),
-    dealer_code VARCHAR(50),
-    street_number VARCHAR(20),
-    street_name VARCHAR(100),
-    city VARCHAR(100),
-    province VARCHAR(50),
-    postal_code VARCHAR(20),
-    country VARCHAR(50),
-    phone VARCHAR(50),
-    email VARCHAR(255),
-    dealer_type VARCHAR(50),
-    status VARCHAR(20),
-    created_at VARCHAR(50)
+-- Interactions (CRM)
+CREATE TABLE staging_interactions (
+    interaction_id VARCHAR(64) PRIMARY KEY,
+    customer_id VARCHAR(64),
+    dealer_id VARCHAR(64),
+    interaction_type VARCHAR(32),
+    interaction_date TIMESTAMP,
+    notes VARCHAR(512),
+    is_dirty BOOLEAN DEFAULT FALSE
 );
 
--- Staging Procurement (Suppliers)
-CREATE TABLE staging.stg_procurement (
-    procurement_id VARCHAR(50),
-    supplier_id VARCHAR(50),
-    vehicle_id VARCHAR(50),
-    cost_price VARCHAR(50),
-    procurement_date VARCHAR(50),
-    status VARCHAR(50)
+-- Telemetry (IoT)
+CREATE TABLE staging_telemetry (
+    telemetry_id VARCHAR(64) PRIMARY KEY,
+    vehicle_id VARCHAR(64),
+    timestamp TIMESTAMP,
+    sensor_type VARCHAR(32),
+    sensor_value VARCHAR(64),
+    location VARCHAR(128),
+    is_dirty BOOLEAN DEFAULT FALSE
+);
+
+-- ETL Metadata (for tracking loads)
+CREATE SCHEMA IF NOT EXISTS staging;
+CREATE TABLE IF NOT EXISTS staging.etl_metadata (
+    table_name VARCHAR(64) PRIMARY KEY,
+    load_time TIMESTAMP,
+    row_count INT
 );

@@ -1,2 +1,3 @@
 postgresql-16.12-1-windows-x64.exe
 .env
+finance-data-platform/phase_4_python_etl/warehouse_conn.env

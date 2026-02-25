@@ -3,10 +3,10 @@ $RAW_BUCKET = "automotive-raw-data-lerato-2026"
 $LOGFILE = "logs/validate_s3.log"
 if (!(Test-Path "logs")) { New-Item -ItemType Directory -Path "logs" | Out-Null }
 
-# List all files in the S3 bucket
+ # List all files in the S3 bucket, excluding .keep files
 $files = aws s3 ls "s3://$RAW_BUCKET/" --recursive | ForEach-Object {
     $_.Split(" ")[-1]
-} | Where-Object { $_ -ne "" }
+} | Where-Object { $_ -ne "" -and $_ -notmatch ".keep" }
 
 foreach ($file in $files) {
     $ext = [System.IO.Path]::GetExtension($file).TrimStart('.')

@@ -5,10 +5,10 @@ $LOGFILE = "logs/archive_processed.log"
 if (!(Test-Path "logs")) { New-Item -ItemType Directory -Path "logs" | Out-Null }
 $TIMESTAMP = Get-Date -Format "yyyyMMddHHmmss"
 
-# List all files in the staging bucket
+ # List all files in the staging bucket, excluding .keep files
 $files = aws s3 ls "s3://$STAGING_BUCKET/" --recursive | ForEach-Object {
     $_.Split(" ")[-1]
-} | Where-Object { $_ -ne "" }
+} | Where-Object { $_ -ne "" -and $_ -notmatch ".keep" }
 
 foreach ($file in $files) {
     $date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
