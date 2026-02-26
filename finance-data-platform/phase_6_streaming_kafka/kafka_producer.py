@@ -65,8 +65,7 @@ class EventProducer:
                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
                 value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                 acks='all',
-                retries=3,
-                compression_type='snappy'
+                retries=3
             )
             print(f"✅ Connected to Kafka: {KAFKA_BOOTSTRAP_SERVERS}")
         except Exception as e:
