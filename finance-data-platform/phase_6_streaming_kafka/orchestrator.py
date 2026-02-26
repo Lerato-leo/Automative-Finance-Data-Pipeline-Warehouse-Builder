@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Phase 6: Streaming Orchestration Manager
 Manages Kafka infrastructure, producers, and consumers for the automotive platform
@@ -10,9 +11,15 @@ import time
 import sys
 import signal
 import os
+import io
 from pathlib import Path
 from typing import Optional
 import argparse
+
+# Force UTF-8 output on Windows
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 class StreamingOrchestrator:
     def __init__(self):

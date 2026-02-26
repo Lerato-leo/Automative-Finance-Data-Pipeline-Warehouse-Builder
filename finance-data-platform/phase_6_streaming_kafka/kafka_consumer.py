@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Phase 6: Kafka Consumer - Batches events and writes to S3
 Listens to Kafka topics and periodically flushes batches to S3 raw folders
