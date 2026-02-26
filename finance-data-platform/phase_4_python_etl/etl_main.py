@@ -123,6 +123,35 @@ def transform(df):
         if 'price' in col or 'amount' in col:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
+    # Add is_dirty flag for tracking data quality issues
+    if 'is_dirty' not in df.columns:
+        df['is_dirty'] = False
+
+    # Categorical field validation - 16 business rule constraints
+    categorical_rules = {
+        'gender': ['M', 'F', 'Other'],
+        'status': ['Active', 'Inactive', 'Pending', 'Closed'],
+        'province': ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'],
+        'engine_type': ['Gasoline', 'Diesel', 'Electric', 'Hybrid', 'Plug-in Hybrid'],
+        'transmission': ['Manual', 'Automatic', 'CVT'],
+        'vehicle_status': ['Available', 'Sold', 'Reserved', 'Damaged'],
+        'sale_channel': ['Dealership', 'Online', 'Auction', 'Private'],
+        'sale_status': ['Completed', 'Pending', 'Cancelled'],
+        'stock_status': ['In Stock', 'Out of Stock', 'Coming Soon'],
+        'interaction_type': ['Phone', 'Email', 'Chat', 'In-Person'],
+        'interaction_channel': ['Sales', 'Support', 'Marketing'],
+        'outcome': ['Won', 'Lost', 'Pending', 'Cancelled'],
+        'payment_method': ['Credit Card', 'Debit Card', 'Check', 'Bank Transfer'],
+        'payment_status': ['Paid', 'Pending', 'Failed', 'Refunded'],
+        'procurement_status': ['Ordered', 'Received', 'Returned'],
+    }
+
+    for col, allowed_values in categorical_rules.items():
+        if col in df.columns:
+            invalid_rows = ~df[col].isin(allowed_values)
+            if invalid_rows.any():
+                df.loc[invalid_rows, 'is_dirty'] = True
+
     return df
 
 
@@ -147,6 +176,14 @@ def upsert(df, table_key, conn):
 
     table_name = TABLE_MAP[table_key]
     target_table = f"staging.{table_name}"
+
+    # Filter out dirty records (data quality issues)
+    if 'is_dirty' in df.columns:
+        clean_df = df[df['is_dirty'] == False].copy()
+        dirty_count = len(df) - len(clean_df)
+        if dirty_count > 0:
+            print(f"[ETL] Filtered {dirty_count} dirty records from {table_name}")
+        df = clean_df
 
     # Get table columns from database
     table_columns = get_table_columns(conn, table_name)
