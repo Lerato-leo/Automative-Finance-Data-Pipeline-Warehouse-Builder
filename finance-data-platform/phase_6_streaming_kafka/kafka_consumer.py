@@ -2,6 +2,19 @@
 Phase 6: Kafka Consumer - Batches events and writes to S3
 Listens to Kafka topics and periodically flushes batches to S3 raw folders
 Acts as a bridge: Kafka → S3 (simulating ERP/CRM connectors)
+
+FOLDER STRUCTURE ORGANIZATION:
+  Events are written to domain-organized folders in raw bucket:
+  
+  sales_topic         → s3://automotive-raw-data-lerato-2026/erp/sales/sales_*.csv
+  inventory_topic     → s3://automotive-raw-data-lerato-2026/erp/inventory/inventory_*.csv
+  interactions_topic  → s3://automotive-raw-data-lerato-2026/crm/interactions/interactions_*.csv
+  payments_topic      → s3://automotive-raw-data-lerato-2026/finance/payments/payments_*.csv
+  procurement_topic   → s3://automotive-raw-data-lerato-2026/suppliers_chain/procurement/procurement_*.csv
+  telemetry_topic     → s3://automotive-raw-data-lerato-2026/iot/telemetry/telemetry_*.csv
+  
+  This folder structure is preserved throughout the pipeline:
+  raw/ → staging/ → archive/ (maintaining erp/, crm/, finance/, etc.)
 """
 
 import json

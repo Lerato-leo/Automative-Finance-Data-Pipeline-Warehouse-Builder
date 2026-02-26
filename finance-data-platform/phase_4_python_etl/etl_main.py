@@ -3,6 +3,18 @@ Phase 4: Python ETL Pipeline
 Extracts data from S3 staging (CSV, JSON, XLSX),
 transforms and loads into PostgreSQL staging schema.
 Resilient to schema mismatches and handles NULLs correctly.
+
+FOLDER STRUCTURE PRESERVATION:
+  Raw bucket:     automotive-raw-data-lerato-2026/erp/sales/sales_file.csv
+       ↓ (moved with full path)
+  Staging bucket: automotive-staging-data-lerato-2026/erp/sales/sales_file.csv
+       ↓ (table inferred from filename: sales → stg_sales)
+  Database:       staging.stg_sales
+       ↓ (processed)
+  Archive bucket: automotive-archive-data-lerato-2026/erp/sales/sales_file_timestamp.csv
+
+Folder structure (erp/, crm/, finance/, suppliers_chain/, iot/) is maintained
+throughout the pipeline for data organization and traceability.
 """
 
 import os
