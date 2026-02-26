@@ -77,16 +77,28 @@ class KafkaToS3Consumer:
         self.flush_thread.start()
 
     def _get_s3_key_and_folder(self, event_type: str) -> tuple:
-        """Determine S3 folder and filename based on event type"""
+        """Determine S3 folder and filename based on event type
+        
+        Maps event types to original domain structure:
+        - erp/* → sales, inventory, customers, dealers, vehicles
+        - crm/* → interactions
+        - finance/* → payments
+        - suppliers_chain/* → procurement, suppliers
+        - iot/* → telemetry
+        """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         mapping = {
-            'sales': ('sales', f'sales_{timestamp}.csv'),
-            'payments': ('payments', f'payments_{timestamp}.csv'),
-            'interactions': ('interactions', f'interactions_{timestamp}.csv'),
-            'inventory': ('inventory', f'inventory_{timestamp}.csv'),
-            'procurement': ('procurement', f'procurement_{timestamp}.csv'),
-            'telemetry': ('telemetry', f'telemetry_{timestamp}.csv'),
+            'sales': ('erp/sales', f'sales_{timestamp}.csv'),
+            'inventory': ('erp/inventory', f'inventory_{timestamp}.csv'),
+            'customers': ('erp/customers', f'customers_{timestamp}.csv'),
+            'dealers': ('erp/dealers', f'dealers_{timestamp}.csv'),
+            'vehicles': ('erp/vehicles', f'vehicles_{timestamp}.csv'),
+            'interactions': ('crm/interactions', f'interactions_{timestamp}.csv'),
+            'payments': ('finance/payments', f'payments_{timestamp}.csv'),
+            'procurement': ('suppliers_chain/procurement', f'procurement_{timestamp}.csv'),
+            'suppliers': ('suppliers_chain/suppliers', f'suppliers_{timestamp}.csv'),
+            'telemetry': ('iot/telemetry', f'telemetry_{timestamp}.csv'),
         }
         
         folder, filename = mapping.get(event_type, ('raw', f'{event_type}_{timestamp}.csv'))
