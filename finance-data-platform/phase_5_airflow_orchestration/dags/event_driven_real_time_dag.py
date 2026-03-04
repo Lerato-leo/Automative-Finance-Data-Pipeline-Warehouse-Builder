@@ -59,6 +59,8 @@ def scan_raw_bucket(**context):
     Supports: sales/, payments/, interactions/, inventory/, procurement/
     """
     import boto3
+    import json
+    import ast
     
     s3 = boto3.client(
         's3',
@@ -69,6 +71,31 @@ def scan_raw_bucket(**context):
     bucket = os.getenv('RAW_BUCKET', 'automotive-raw-data-lerato-2026')
     
     try:
+        dag_run_conf = context.get('dag_run').conf if context.get('dag_run') else {}
+        triggered_files = dag_run_conf.get('s3_keys', []) if isinstance(dag_run_conf, dict) else []
+
+        if isinstance(triggered_files, str):
+            parsed_files = []
+            try:
+                parsed_files = json.loads(triggered_files)
+            except Exception:
+                try:
+                    parsed_files = ast.literal_eval(triggered_files)
+                except Exception:
+                    parsed_files = []
+            triggered_files = parsed_files
+
+        if isinstance(triggered_files, list):
+            triggered_files = [f for f in triggered_files if isinstance(f, str) and f.strip()]
+        else:
+            triggered_files = []
+
+        if triggered_files:
+            logger.info(f"✓ Using {len(triggered_files)} file(s) from trigger event context")
+            context['task_instance'].xcom_push(key='file_list', value=triggered_files)
+            context['task_instance'].xcom_push(key='file_count', value=len(triggered_files))
+            return {'files': triggered_files, 'count': len(triggered_files), 'source': 'event_conf'}
+
         # List all objects in raw bucket
         response = s3.list_objects_v2(Bucket=bucket)
         
@@ -135,6 +162,7 @@ def move_to_staging(**context):
     
     moved_count = 0
     failed_count = 0
+    moved_files = []
     
     try:
         for file_key in file_list:
@@ -151,6 +179,7 @@ def move_to_staging(**context):
                 
                 logger.info(f"  ✓ Moved {file_key} to staging")
                 moved_count += 1
+                moved_files.append(file_key)
                 
             except Exception as e:
                 logger.error(f"  ✗ Failed to move {file_key}: {e}")
@@ -159,7 +188,8 @@ def move_to_staging(**context):
         logger.info(f"✓ Moved {moved_count} files to staging ({failed_count} failures)")
         
         context['task_instance'].xcom_push(key='move_count', value=moved_count)
-        return {'moved_count': moved_count, 'failed_count': failed_count}
+        context['task_instance'].xcom_push(key='moved_files', value=moved_files)
+        return {'moved_count': moved_count, 'failed_count': failed_count, 'moved_files': moved_files}
         
     except Exception as e:
         logger.error(f"✗ Error during move operation: {e}")
@@ -179,24 +209,20 @@ def detect_file_types(**context):
     Identify which data types are present in the batch.
     Returns list of data types for routing.
     """
-    import boto3
-    
-    s3 = boto3.client(
-        's3',
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-        region_name=os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
-    )
-    
-    staging_bucket = os.getenv('STAGING_BUCKET', 'automotive-staging-data-lerato-2026')
+    moved_files = context['task_instance'].xcom_pull(
+        task_ids='move_raw_to_staging',
+        key='moved_files'
+    ) or []
     
     try:
-        response = s3.list_objects_v2(Bucket=staging_bucket)
-        
-        if 'Contents' not in response:
-            raise FileNotFoundError(f"No files in staging bucket")
-        
-        files = [obj['Key'] for obj in response['Contents'] if not obj['Key'].endswith('.keep')]
+        files = [file_key for file_key in moved_files if not file_key.endswith('.keep')]
+
+        if not files:
+            logger.warning("No moved files found for file type detection")
+            context['task_instance'].xcom_push(key='data_types', value=[])
+            context['task_instance'].xcom_push(key='total_files', value=0)
+            context['task_instance'].xcom_push(key='file_details', value={})
+            return {'data_types': [], 'total_files': 0}
         
         # Detect data types from folder structure
         data_types = set()
@@ -256,6 +282,18 @@ def run_etl_pipeline(**context):
         key='total_files'
     )
     
+    data_types = data_types or []
+    total_files = total_files or 0
+
+    if total_files == 0:
+        logger.info("No files to process for this run; skipping ETL execution")
+        context['task_instance'].xcom_push(key='etl_status', value='skipped_no_files')
+        return {
+            'status': 'skipped_no_files',
+            'data_types': data_types,
+            'file_count': total_files
+        }
+
     logger.info(f"Running ETL pipeline for {len(data_types)} data types ({total_files} files)...")
     logger.info(f"Data types: {data_types}")
     
