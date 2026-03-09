@@ -1,0 +1,274 @@
+# Automotive Finance Data Platform - Complete Docker Orchestration
+# Includes: Phase 3 (Ingestion), Phase 5 (Airflow), Phase 6 (Kafka)
+
+services:
+
+  # ============================================
+  # PHASE 3: DATA INGESTION SERVICE
+  # ============================================
+  # Monitors RAW bucket, validates files, moves to STAGING with notifications
+  phase-3-ingestion:
+    build:
+      context: ./finance-data-platform/phase_3_shell_ingestion
+      dockerfile: Dockerfile
+    container_name: phase-3-ingestion
+    image: automative-phase3:latest
+    profiles:
+      - phase3-standalone
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      S3_RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      S3_STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      S3_ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-automotive-archive-data-lerato-2026}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_MAIL_FROM:-notifications@automativedata.com}
+      SMTP_TO: ${SMTP_TO:-lerato.matamela01@gmail.com}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      - phase-3-postgres  # Optional: for metadata logging
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import boto3; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: on-failure
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Optional: PostgreSQL for Phase 3 metadata (audit logging)
+  phase-3-postgres:
+    image: postgres:15-alpine
+    container_name: phase-3-postgres
+    environment:
+      POSTGRES_USER: phase3
+      POSTGRES_PASSWORD: phase3_secret
+      POSTGRES_DB: ingestion_log
+    volumes:
+      - phase3_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - data-platform
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "phase3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # PHASE 5: AIRFLOW ORCHESTRATION
+  # ============================================
+  # Main orchestration engine for all ETL workflows
+  # Services below are identical to phase_5_airflow_orchestration/docker-compose.yml
+
+  airflow-postgres:
+    image: postgres:15-alpine
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-redis:
+    image: redis:7-alpine
+    container_name: airflow-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-scheduler:
+    build:
+      context: ./finance-data-platform/phase_5_airflow_orchestration
+      dockerfile: Dockerfile
+    image: automative-airflow:2.7.3-psycopg2
+    container_name: airflow-scheduler
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-redis:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://airflow-redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW___CORE__DAG_FILE_PROCESSOR_TIMEOUT: 120
+      AIRFLOW_CORE_LOAD_EXAMPLES: 'false'
+      AIRFLOW_VAR_AWS_REGION: ${AWS_REGION:-us-east-1}
+      AIRFLOW_VAR_AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AIRFLOW_VAR_AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AIRFLOW_VAR_S3_RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      AIRFLOW_VAR_S3_STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      AIRFLOW_VAR_S3_ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-automotive-archive-data-lerato-2026}
+      AIRFLOW_VAR_SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      AIRFLOW_VAR_SMTP_USER: ${SMTP_USER}
+      AIRFLOW_VAR_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      AIRFLOW_VAR_EMAIL_RECIPIENT: ${SMTP_TO:-lerato.matamela01@gmail.com}
+      AIRFLOW_VAR_TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
+      RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-automotive-archive-data-lerato-2026}
+      WAREHOUSE_CONN: dbname=${DB_NAME} user=${DB_USER} password=${DB_PASSWORD} host=${DB_HOST_EXTERNAL:-localhost} port=${DB_PORT:-5432}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_MAIL_FROM: ${SMTP_MAIL_FROM:-notifications@automativedata.com}
+      SMTP_TO: ${SMTP_TO:-lerato.matamela01@gmail.com}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
+      PIPELINE_PROJECT_ROOT: /opt/airflow/project
+    volumes:
+      - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
+      - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
+      - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
+      - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
+      - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+    ports:
+      - "8793:8793"
+    networks:
+      - data-platform
+    command: scheduler
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  airflow-webserver:
+    build:
+      context: ./finance-data-platform/phase_5_airflow_orchestration
+      dockerfile: Dockerfile
+    image: automative-airflow:2.7.3-psycopg2
+    container_name: airflow-webserver
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-redis:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://airflow-redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW_CORE_LOAD_EXAMPLES: 'false'
+      PIPELINE_PROJECT_ROOT: /opt/airflow/project
+    volumes:
+      - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
+      - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
+      - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
+      - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
+      - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+    ports:
+      - "8081:8080"
+    networks:
+      - data-platform
+    command: webserver
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  airflow-worker:
+    build:
+      context: ./finance-data-platform/phase_5_airflow_orchestration
+      dockerfile: Dockerfile
+    image: automative-airflow:2.7.3-psycopg2
+    container_name: airflow-worker
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-redis:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://airflow-redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+      AIRFLOW_CORE_LOAD_EXAMPLES: 'false'
+      AIRFLOW_VAR_AWS_REGION: ${AWS_REGION:-us-east-1}
+      AIRFLOW_VAR_AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AIRFLOW_VAR_AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AIRFLOW_VAR_S3_RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      AIRFLOW_VAR_S3_STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      AIRFLOW_VAR_S3_ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-automotive-archive-data-lerato-2026}
+      AIRFLOW_VAR_SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      AIRFLOW_VAR_SMTP_USER: ${SMTP_USER}
+      AIRFLOW_VAR_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      AIRFLOW_VAR_EMAIL_RECIPIENT: ${SMTP_TO:-lerato.matamela01@gmail.com}
+      AIRFLOW_VAR_TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
+      RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-automotive-archive-data-lerato-2026}
+      WAREHOUSE_CONN: dbname=${DB_NAME} user=${DB_USER} password=${DB_PASSWORD} host=${DB_HOST_EXTERNAL:-localhost} port=${DB_PORT:-5432}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_MAIL_FROM: ${SMTP_MAIL_FROM:-notifications@automativedata.com}
+      SMTP_TO: ${SMTP_TO:-lerato.matamela01@gmail.com}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
+      PIPELINE_PROJECT_ROOT: /opt/airflow/project
+    volumes:
+      - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
+      - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
+      - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
+      - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
+      - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+    networks:
+      - data-platform
+    command: celery worker
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # ============================================
+  # NETWORKS & VOLUMES
+  # ============================================
+
+networks:
+  data-platform:
+    driver: bridge
+
+volumes:
+  phase3_postgres_data:
+  airflow_postgres_data:

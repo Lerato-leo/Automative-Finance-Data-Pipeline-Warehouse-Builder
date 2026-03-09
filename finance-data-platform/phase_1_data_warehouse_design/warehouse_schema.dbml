@@ -1,0 +1,232 @@
+Table warehouse.dim_date {
+  date_key bigint [pk, increment]
+  date_actual date [not null, unique]
+  year smallint [not null]
+  quarter smallint [not null]
+  month smallint [not null]
+  day smallint [not null]
+  day_of_week smallint [not null]
+  is_weekend boolean [not null]
+}
+
+Table warehouse.dim_customer {
+  customer_key bigint [pk, increment]
+  customer_id varchar(64) [not null]
+  first_name varchar(100)
+  last_name varchar(100)
+  customer_name varchar(220)
+  email varchar(255)
+  phone varchar(50)
+  date_of_birth date
+  gender varchar(20)
+  street_number varchar(20)
+  street_name varchar(255)
+  suburb varchar(100)
+  city varchar(100)
+  province varchar(100)
+  postal_code varchar(20)
+  country varchar(100)
+  status varchar(50)
+  effective_date date [not null]
+  expiry_date date
+  is_current boolean [not null, default: true]
+  created_at timestamp
+
+  indexes {
+    (customer_id, effective_date) [unique, name: "uq_dim_customer_scd"]
+    (customer_id, is_current) [name: "idx_dim_customer_customer_id_current"]
+  }
+}
+
+Table warehouse.dim_dealer {
+  dealer_key bigint [pk, increment]
+  dealer_id varchar(64) [not null, unique]
+  dealer_name varchar(255)
+  dealer_code varchar(50)
+  dealer_type varchar(50)
+  location varchar(150)
+  contact_name varchar(100)
+  contact_email varchar(255)
+  contact_phone varchar(50)
+  phone varchar(50)
+  email varchar(255)
+  street_number varchar(20)
+  street_name varchar(255)
+  city varchar(100)
+  province varchar(100)
+  postal_code varchar(20)
+  country varchar(100)
+  status varchar(50)
+  created_at timestamp
+}
+
+Table warehouse.dim_vehicle {
+  vehicle_key bigint [pk, increment]
+  vehicle_id varchar(64)
+  vin varchar(64) [not null]
+  make varchar(100)
+  model varchar(100)
+  year smallint
+  color varchar(50)
+  engine_type varchar(50)
+  transmission varchar(50)
+  manufacture_country varchar(100)
+  manufacture_date date
+  status varchar(50)
+  effective_date date [not null]
+  expiry_date date
+  is_current boolean [not null, default: true]
+  created_at timestamp
+
+  indexes {
+    (vin, effective_date) [unique, name: "uq_dim_vehicle_scd"]
+    (vin, is_current) [name: "idx_dim_vehicle_vin_current"]
+  }
+}
+
+Table warehouse.dim_supplier {
+  supplier_key bigint [pk, increment]
+  supplier_id varchar(64) [not null, unique]
+  supplier_name varchar(255)
+  country varchar(100)
+  contact_email varchar(255)
+  supplier_type varchar(50)
+  status varchar(50)
+  created_at timestamp
+}
+
+Table warehouse.fact_sales {
+  sales_key bigint [pk, increment]
+  sale_id varchar(64) [not null, unique]
+  sale_date date
+  sale_date_key bigint
+  customer_key bigint
+  vehicle_key bigint
+  dealer_key bigint
+  sale_price numeric(14,2)
+  discount_amount numeric(14,2) [default: 0]
+  final_price numeric(14,2)
+  sale_channel varchar(50)
+  sale_status varchar(50)
+  payment_method varchar(50)
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (sale_date) [name: "idx_fact_sales_sale_date"]
+    (customer_key) [name: "idx_fact_sales_customer_key"]
+    (vehicle_key) [name: "idx_fact_sales_vehicle_key"]
+    (dealer_key) [name: "idx_fact_sales_dealer_key"]
+  }
+}
+
+Table warehouse.fact_payments {
+  payment_key bigint [pk, increment]
+  payment_id varchar(64) [not null, unique]
+  sale_id varchar(64)
+  sales_key bigint
+  payment_date date
+  payment_date_key bigint
+  payment_amount numeric(14,2)
+  payment_method varchar(50)
+  payment_status varchar(50)
+  transaction_reference varchar(100)
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (sale_id) [name: "idx_fact_payments_sale_id"]
+    (sales_key) [name: "idx_fact_payments_sales_key"]
+  }
+}
+
+Table warehouse.fact_procurement {
+  procurement_key bigint [pk, increment]
+  procurement_id varchar(64) [not null, unique]
+  procurement_date date
+  procurement_date_key bigint
+  supplier_key bigint
+  vehicle_key bigint
+  cost_price numeric(14,2)
+  status varchar(50)
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (supplier_key) [name: "idx_fact_procurement_supplier_key"]
+  }
+}
+
+Table warehouse.fact_inventory {
+  inventory_key bigint [pk, increment]
+  inventory_id varchar(64) [not null, unique]
+  inventory_date date
+  inventory_date_key bigint
+  vehicle_key bigint
+  dealer_key bigint
+  quantity int
+  stock_status varchar(50)
+  last_updated date
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (dealer_key, vehicle_key) [name: "idx_fact_inventory_dealer_vehicle"]
+  }
+}
+
+Table warehouse.fact_interactions {
+  interaction_key bigint [pk, increment]
+  interaction_id varchar(64) [not null, unique]
+  interaction_date date
+  interaction_date_key bigint
+  customer_key bigint
+  dealer_key bigint
+  employee_id varchar(64)
+  interaction_type varchar(50)
+  interaction_channel varchar(50)
+  outcome varchar(50)
+  notes text
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (customer_key, interaction_date) [name: "idx_fact_interactions_customer_date"]
+  }
+}
+
+Table warehouse.fact_telemetry {
+  telemetry_key bigint [pk, increment]
+  telemetry_id varchar(64) [not null, unique]
+  vehicle_key bigint
+  telemetry_timestamp timestamp
+  telemetry_date_key bigint
+  speed int
+  fuel_level int
+  engine_temperature int
+  location_lat numeric(9,6)
+  location_long numeric(9,6)
+  created_at timestamp [default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (vehicle_key, telemetry_timestamp) [name: "idx_fact_telemetry_vehicle_timestamp"]
+  }
+}
+
+Ref: warehouse.fact_sales.sale_date_key > warehouse.dim_date.date_key
+Ref: warehouse.fact_sales.customer_key > warehouse.dim_customer.customer_key
+Ref: warehouse.fact_sales.vehicle_key > warehouse.dim_vehicle.vehicle_key
+Ref: warehouse.fact_sales.dealer_key > warehouse.dim_dealer.dealer_key
+
+Ref: warehouse.fact_payments.sales_key > warehouse.fact_sales.sales_key
+Ref: warehouse.fact_payments.payment_date_key > warehouse.dim_date.date_key
+
+Ref: warehouse.fact_procurement.procurement_date_key > warehouse.dim_date.date_key
+Ref: warehouse.fact_procurement.supplier_key > warehouse.dim_supplier.supplier_key
+Ref: warehouse.fact_procurement.vehicle_key > warehouse.dim_vehicle.vehicle_key
+
+Ref: warehouse.fact_inventory.inventory_date_key > warehouse.dim_date.date_key
+Ref: warehouse.fact_inventory.vehicle_key > warehouse.dim_vehicle.vehicle_key
+Ref: warehouse.fact_inventory.dealer_key > warehouse.dim_dealer.dealer_key
+
+Ref: warehouse.fact_interactions.interaction_date_key > warehouse.dim_date.date_key
+Ref: warehouse.fact_interactions.customer_key > warehouse.dim_customer.customer_key
+Ref: warehouse.fact_interactions.dealer_key > warehouse.dim_dealer.dealer_key
+
+Ref: warehouse.fact_telemetry.vehicle_key > warehouse.dim_vehicle.vehicle_key
+Ref: warehouse.fact_telemetry.telemetry_date_key > warehouse.dim_date.date_key

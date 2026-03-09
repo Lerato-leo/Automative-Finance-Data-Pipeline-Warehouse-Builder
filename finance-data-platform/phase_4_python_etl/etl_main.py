@@ -23,6 +23,7 @@ import pandas as pd
 from io import BytesIO
 import psycopg2
 import json
+import re
 from pathlib import Path
 from psycopg2.extras import execute_values
 
@@ -52,6 +53,7 @@ WAREHOUSE_CONN = os.getenv(
     'dbname=yourdb user=youruser password=yourpass host=yourhost'
 )
 INCREMENTAL = os.getenv('INCREMENTAL', 'false').lower() == 'true'
+CURRENT_RUN_STAGING_KEYS = os.getenv('CURRENT_RUN_STAGING_KEYS', '')
 
 s3 = boto3.client('s3')
 
@@ -72,11 +74,46 @@ TABLE_MAP = {
     'stg_telemetry': 'staging_telemetry',
 }
 
+TABLE_ALIASES = {
+    'stg_interactions': ('customer_interactions', 'interaction'),
+    'stg_customers': ('crm_customers', 'customer'),
+    'stg_dealers': ('dealer',),
+    'stg_vehicles': ('vehicle',),
+    'stg_sales': ('sales',),
+    'stg_inventory': ('inventory',),
+    'stg_payments': ('payment', 'erp_finance'),
+    'stg_suppliers': ('supplier',),
+    'stg_procurement': ('procurement', 'purchase_order', 'purchase_orders', 'order'),
+    'stg_telemetry': ('telemetry', 'sensor', 'iot_sensors'),
+}
+
 
 # ----------------------------
 # FILE DISCOVERY
 # ----------------------------
+def parse_current_run_staging_keys():
+    if not CURRENT_RUN_STAGING_KEYS:
+        return []
+
+    try:
+        parsed = json.loads(CURRENT_RUN_STAGING_KEYS)
+    except json.JSONDecodeError:
+        print('[ETL][WARN] CURRENT_RUN_STAGING_KEYS is not valid JSON. Falling back to full staging scan.')
+        return []
+
+    if not isinstance(parsed, list):
+        print('[ETL][WARN] CURRENT_RUN_STAGING_KEYS must be a list. Falling back to full staging scan.')
+        return []
+
+    return [key for key in parsed if isinstance(key, str) and key.endswith(('.csv', '.json', '.xlsx'))]
+
+
 def list_staging_files():
+    current_run_keys = parse_current_run_staging_keys()
+    if current_run_keys:
+        print(f"[ETL] Using {len(current_run_keys)} staged file(s) from the current DAG run.")
+        return current_run_keys
+
     paginator = s3.get_paginator('list_objects_v2')
     files = []
 
@@ -107,13 +144,98 @@ def extract_file(key):
     raise ValueError(f"Unsupported file format: {key}")
 
 
+def normalize_column_aliases(df, table_key):
+    column_aliases = {
+        'stg_customers': {
+            'created_date': 'created_at',
+            'zip': 'zip_code',
+        },
+        'stg_interactions': {
+            'type': 'interaction_type',
+            'timestamp': 'interaction_date',
+            'created_date': 'interaction_date',
+            'subject': 'notes',
+        },
+        'stg_payments': {
+            'transaction_id': 'payment_id',
+            'transaction_date': 'payment_date',
+            'payment_amount': 'amount',
+            'payment_status': 'status',
+        },
+        'stg_suppliers': {
+            'contact_person': 'contact_name',
+            'email': 'contact_email',
+            'phone': 'contact_phone',
+            'zip': 'zip_code',
+            'created_date': 'created_at',
+        },
+        'stg_procurement': {
+            'po_id': 'procurement_id',
+            'vendor_id': 'supplier_id',
+            'po_date': 'procurement_date',
+            'amount': 'cost',
+            'procurement_status': 'status',
+        },
+        'stg_telemetry': {
+            'device_id': 'telemetry_id',
+            'reading_type': 'sensor_type',
+            'reading_value': 'sensor_value',
+        },
+    }
+
+    aliases = column_aliases.get(table_key, {})
+    if not aliases:
+        return df
+
+    rename_map = {}
+    for source_name, target_name in aliases.items():
+        if source_name in df.columns and target_name not in df.columns:
+            rename_map[source_name] = target_name
+
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    if table_key == 'stg_customers' and 'name' in df.columns:
+        if 'first_name' not in df.columns:
+            df['first_name'] = df['name'].astype(str).str.split().str[0]
+        if 'last_name' not in df.columns:
+            df['last_name'] = df['name'].astype(str).str.split().str[1:].str.join(' ')
+
+    if table_key == 'stg_payments' and 'status' in df.columns:
+        payment_status_map = {
+            'completed': 'Paid',
+            'paid': 'Paid',
+            'pending': 'Pending',
+            'failed': 'Failed',
+            'cancelled': 'Failed',
+            'canceled': 'Failed',
+            'refunded': 'Refunded',
+        }
+        normalized = df['status'].astype(str).str.strip().str.lower().map(payment_status_map)
+        df['status'] = normalized.fillna(df['status'])
+
+    if table_key == 'stg_procurement' and 'status' in df.columns:
+        procurement_status_map = {
+            'ordered': 'Ordered',
+            'received': 'Received',
+            'returned': 'Returned',
+            'pending': 'Ordered',
+            'completed': 'Received',
+        }
+        normalized = df['status'].astype(str).str.strip().str.lower().map(procurement_status_map)
+        df['status'] = normalized.fillna(df['status'])
+
+    return df
+
+
 # ----------------------------
 # TRANSFORM
 # ----------------------------
-def transform(df):
+def transform(df, table_key):
 
     df = df.drop_duplicates()
     df = df.dropna(how='all')
+    df = normalize_column_aliases(df, table_key)
 
     # Trim whitespace
     for col in df.select_dtypes(include='string').columns:
@@ -157,6 +279,11 @@ def transform(df):
         'payment_status': ['Paid', 'Pending', 'Failed', 'Refunded'],
         'procurement_status': ['Ordered', 'Received', 'Returned'],
     }
+
+    if table_key == 'stg_payments':
+        categorical_rules['status'] = ['Paid', 'Pending', 'Failed', 'Refunded']
+    elif table_key == 'stg_procurement':
+        categorical_rules['status'] = ['Ordered', 'Received', 'Returned']
 
     for col, allowed_values in categorical_rules.items():
         if col in df.columns:
@@ -254,10 +381,22 @@ def update_metadata(table_key, row_count, conn):
 # TABLE INFERENCE
 # ----------------------------
 def infer_table(key):
-    import re
     base = os.path.splitext(os.path.basename(key))[0].lower()
-    base = re.sub(r'_[0-9]{4,8}$', '', base)
-    return f"stg_{base}"
+    base = re.sub(r'_[0-9]{4,14}$', '', base)
+    while re.search(r'_[0-9]{4,14}$', base):
+        base = re.sub(r'_[0-9]{4,14}$', '', base)
+
+    normalized_base = re.sub(r'_(auto|consolidated|e2e_test|catalog_e2e_test|readings_e2e_test)$', '', base)
+
+    direct_key = f"stg_{normalized_base}"
+    if direct_key in TABLE_MAP:
+        return direct_key
+
+    for table_key, aliases in TABLE_ALIASES.items():
+        if any(alias in normalized_base for alias in aliases):
+            return table_key
+
+    return f"stg_{normalized_base}"
 
 
 # ----------------------------
@@ -292,7 +431,7 @@ def main():
             df = extract_file(key)
             print(f"[ETL] Extracted {len(df)} records.")
 
-            df = transform(df)
+            df = transform(df, table_key)
 
             if df.empty:
                 print("[ETL] No valid rows after transform.")

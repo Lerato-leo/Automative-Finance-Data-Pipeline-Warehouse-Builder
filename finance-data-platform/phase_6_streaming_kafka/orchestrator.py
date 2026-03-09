@@ -190,7 +190,7 @@ class StreamingOrchestrator:
             print("\nData Flow Summary:")
             print("  Producers → Kafka Topics → Consumer")
             print("  → Batched into CSV → S3 raw folder")
-            print("  → Airflow event_driven_real_time_etl triggers")
+            print("  → Airflow automotive_finance_orchestration triggers")
             print("  → ETL processes data → Warehouse")
             
         except KeyboardInterrupt:

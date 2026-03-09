@@ -12,12 +12,19 @@ Kafka Topics (Message Bus)
     ↓
 Kafka Consumers (Batch to S3)
     ↓
-S3 Raw Bucket (staging area)
+S3 Raw Bucket (canonical raw landing zone)
     ↓
-Airflow event_driven_real_time_etl (ETL)
+Airflow automotive_finance_orchestration
     ↓
 PostgreSQL Warehouse (Analytics)
 ```
+
+Phase 6 now has a single supported streaming path:
+- `orchestrator.py` manages Kafka startup, producer runs, consumer runs, and demo flows.
+- `kafka_producer.py` publishes canonical event types.
+- `kafka_consumer.py` batches those events into the existing raw S3 layout.
+
+Older duplicate scripts were removed and are no longer part of the workflow.
 
 ---
 
@@ -43,7 +50,7 @@ Each event includes realistic data (VINs, customer IDs, timestamps, etc.).
 - Listens to all Kafka topics
 - Batches messages (100 events or 5 minutes, whichever comes first)
 - Writes batches to S3 as CSV files
-- Automatically triggers Airflow detection
+- Lands files in the raw bucket first, then lets the single Airflow DAG pick them up on schedule or by manual trigger
 
 #### 4. **Orchestrator** (`orchestrator.py`)
 Command-line tool to manage the entire pipeline:
@@ -112,12 +119,12 @@ The consumer:
 - Listens to all topics
 - Accumulates messages
 - Flushes every 100 messages or 5 minutes
-- Writes to S3: `s3://automotive-raw-data-lerato-2026/[data_type]/`
+- Writes to the canonical raw prefixes already used by the rest of the platform
 
 Output example:
 ```
-✓ Flushed 100 sales events → s3://automotive-raw-data-lerato-2026/sales/sales_20260226_102345.csv
-✓ Flushed 100 payments events → s3://automotive-raw-data-lerato-2026/payments/payments_20260226_102346.csv
+✓ Flushed 100 sales events → s3://automotive-raw-data-lerato-2026/erp/sales/sales_20260226_102345.csv
+✓ Flushed 100 payments events → s3://automotive-raw-data-lerato-2026/finance/payments/payments_20260226_102346.csv
 ```
 
 #### Step 4: Monitor Data Flow
@@ -127,13 +134,19 @@ Output example:
    - Monitor consumer lag
 
 2. **S3 Raw Bucket**:
-   - Check `s3://automotive-raw-data-lerato-2026/[data_type]/`
+    - Check the canonical raw prefixes such as:
+      - `s3://automotive-raw-data-lerato-2026/erp/sales/`
+      - `s3://automotive-raw-data-lerato-2026/finance/payments/`
+      - `s3://automotive-raw-data-lerato-2026/crm/interactions/`
+      - `s3://automotive-raw-data-lerato-2026/erp/inventory/`
+      - `s3://automotive-raw-data-lerato-2026/suppliers_chain/procurement/`
+      - `s3://automotive-raw-data-lerato-2026/iot/telemetry/`
    - New CSV files appear every 5 minutes or 100 messages
 
 3. **Airflow**:
-   - Airflow `event_driven_real_time_etl` DAG auto-triggers
-   - Monitors S3 for new files
-   - Processes through ETL pipeline
+    - Airflow `automotive_finance_orchestration` runs the end-to-end flow
+    - Monitors S3 for new files
+    - Executes Phase 3, Phase 4, archive, and notifications
 
 ---
 
@@ -207,12 +220,12 @@ Every event includes:
 #### Topic to S3 Mapping
 | Kafka Topic | S3 Folder | CSV Format |
 |------------|-----------|-----------|
-| sales_topic | sales/ | sales_YYYYMMDD_HHMMSS.csv |
-| payments_topic | payments/ | payments_YYYYMMDD_HHMMSS.csv |
-| interactions_topic | interactions/ | interactions_YYYYMMDD_HHMMSS.csv |
-| inventory_topic | inventory/ | inventory_YYYYMMDD_HHMMSS.csv |
-| procurement_topic | procurement/ | procurement_YYYYMMDD_HHMMSS.csv |
-| telemetry_topic | telemetry/ | telemetry_YYYYMMDD_HHMMSS.csv |
+| sales_topic | erp/sales/ | sales_YYYYMMDD_HHMMSS.csv |
+| payments_topic | finance/payments/ | payments_YYYYMMDD_HHMMSS.csv |
+| interactions_topic | crm/interactions/ | interactions_YYYYMMDD_HHMMSS.csv |
+| inventory_topic | erp/inventory/ | inventory_YYYYMMDD_HHMMSS.csv |
+| procurement_topic | suppliers_chain/procurement/ | procurement_YYYYMMDD_HHMMSS.csv |
+| telemetry_topic | iot/telemetry/ | telemetry_YYYYMMDD_HHMMSS.csv |
 
 ---
 
@@ -225,14 +238,14 @@ Every event includes:
 
 #### Docker Status
 ```bash
-docker-compose -f docker-compose.yml ps
+docker compose -f docker-compose.yml ps
 ```
 
 #### AWS S3
 ```bash
 # Monitor raw bucket
-aws s3 ls s3://automotive-raw-data-lerato-2026/sales/
-aws s3 ls s3://automotive-raw-data-lerato-2026/payments/
+aws s3 ls s3://automotive-raw-data-lerato-2026/erp/sales/
+aws s3 ls s3://automotive-raw-data-lerato-2026/finance/payments/
 ```
 
 #### Airflow Logs
@@ -300,7 +313,7 @@ python orchestrator.py --kafka-start
 python orchestrator.py --producers telemetry --interval 2 --count 100
 python orchestrator.py --consumer
 
-# Check S3: s3://automotive-raw-data-lerato-2026/telemetry/
+# Check S3: s3://automotive-raw-data-lerato-2026/iot/telemetry/
 ```
 
 ---
@@ -312,7 +325,7 @@ python orchestrator.py --consumer
 | "Connection refused" on port 9092 | Run `--kafka-start` first; wait 10 sec |
 | Consumer not batching to S3 | Check AWS credentials; verify RAW_BUCKET exists |
 | Topics not appearing in Kafka UI | Producers must be running; topics auto-create |
-| Producer hangs after starting | Check Kafka is healthy: `docker-compose ps` |
+| Producer hangs after starting | Check Kafka is healthy: `docker compose ps` |
 | No AWS credentials error | Set: `export AWS_ACCESS_KEY_ID=...` and `AWS_SECRET_ACCESS_KEY` |
 
 ---
@@ -337,7 +350,7 @@ Batch Files (Phase 3-4)
         ↓
     S3 Raw
         ↓
-Airflow event_driven_real_time_etl (Phase 5)
+Airflow automotive_finance_orchestration (Phase 5)
         ↓
     Warehouse
 ```
@@ -348,7 +361,7 @@ Batch Files (Phase 3-4) ─┐
                         ├→ S3 Raw
 Kafka Streams (Phase 6) ┘
         ↓
-Airflow event_driven_real_time_etl (Phase 5)
+Airflow automotive_finance_orchestration (Phase 5)
         ↓
     Warehouse
 ```
