@@ -120,7 +120,9 @@ docker exec airflow-webserver airflow users create \
 
 If the dashboard is deployed directly on Streamlit Cloud, the repository must expose a root `requirements.txt` so the platform installs dashboard dependencies.
 
-Set these values in Streamlit app secrets:
+Use `finance-data-platform/phase_9_documentation_deployment/deployment/streamlit_cloud_secrets.example.toml` as the sample values to copy into the Streamlit Cloud app settings.
+
+Set these values in the hosted app configuration:
 
 ```toml
 DATABASE_URL_EXTERNAL = "postgresql://warehouse_user:your-password@your-render-host:5432/automative_warehousee_ygg3"

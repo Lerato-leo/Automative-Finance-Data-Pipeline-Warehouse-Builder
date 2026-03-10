@@ -21,6 +21,11 @@ except ImportError:  # pragma: no cover - fallback for environments missing the 
 ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 
 
+def load_runtime_config() -> None:
+    load_env(ROOT_ENV)
+    load_streamlit_secrets()
+
+
 def load_streamlit_secrets() -> None:
     if not hasattr(st, "secrets"):
         return
@@ -79,9 +84,21 @@ def build_connection_config() -> dict[str, str]:
 
 
 def get_connection() -> psycopg2.extensions.connection:
-    load_env(ROOT_ENV)
-    load_streamlit_secrets()
+    load_runtime_config()
     return psycopg2.connect(**build_connection_config())
+
+
+def has_connection_config() -> bool:
+    load_runtime_config()
+    return any(
+        os.getenv(key)
+        for key in (
+            "DATABASE_URL_EXTERNAL",
+            "DATABASE_URL",
+            "DB_HOST_EXTERNAL",
+            "DB_HOST",
+        )
+    )
 
 
 @st.cache_data(ttl=10)
@@ -110,25 +127,15 @@ def main() -> None:
     st.title("Automotive Finance Monitoring Dashboard")
     st.caption("Auto-refresh every 10 seconds")
 
-    if not (
-        os.getenv("DATABASE_URL_EXTERNAL")
-        or os.getenv("DATABASE_URL")
-        or os.getenv("DB_HOST_EXTERNAL")
-        or os.getenv("DB_HOST")
-        or (hasattr(st, "secrets") and (
-            "DATABASE_URL_EXTERNAL" in st.secrets
-            or "DATABASE_URL" in st.secrets
-            or "DB_HOST_EXTERNAL" in st.secrets
-            or "DB_HOST" in st.secrets
-        ))
-    ):
-        st.info("Configure DB connection values in Streamlit secrets or environment variables before using the dashboard.")
+    if not has_connection_config():
+        st.info("Set DATABASE_URL_EXTERNAL or the DB_* connection variables before using the dashboard.")
+        st.stop()
 
     try:
         metrics_df = load_pipeline_metrics()
     except OperationalError:
         st.error(
-            "Database connection failed. On Streamlit Cloud, set either DATABASE_URL_EXTERNAL or the DB_HOST_EXTERNAL, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD secrets. Render-hosted PostgreSQL connections usually also require sslmode=require."
+            "Database connection failed. Verify DATABASE_URL_EXTERNAL or the DB_* connection variables, and set DB_SSLMODE=require when using hosted PostgreSQL such as Render."
         )
         st.stop()
 
