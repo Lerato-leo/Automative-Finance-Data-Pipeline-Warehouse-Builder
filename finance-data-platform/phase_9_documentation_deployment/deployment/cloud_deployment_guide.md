@@ -115,3 +115,19 @@ docker exec airflow-webserver airflow users create \
   --firstname Admin --lastname User \
   --role Admin --email admin@example.com
 ```
+
+## Streamlit Cloud Notes
+
+If the dashboard is deployed directly on Streamlit Cloud, the repository must expose a root `requirements.txt` so the platform installs dashboard dependencies.
+
+Set these values in Streamlit app secrets:
+
+```toml
+DB_HOST_EXTERNAL = "your-render-host"
+DB_PORT = "5432"
+DB_NAME = "automative_warehousee_ygg3"
+DB_USER = "warehouse_user"
+DB_PASSWORD = "your-password"
+```
+
+Use `finance-data-platform/phase_8_monitoring_logging/dashboard/monitoring_dashboard.py` as the app entrypoint.

@@ -19,6 +19,14 @@ except ImportError:  # pragma: no cover - fallback for environments missing the 
 ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 
 
+def load_streamlit_secrets() -> None:
+    if not hasattr(st, "secrets"):
+        return
+    for key in ("DB_HOST_EXTERNAL", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"):
+        if key in st.secrets:
+            os.environ.setdefault(key, str(st.secrets[key]))
+
+
 def load_env(path: Path) -> None:
     if not path.exists():
         return
@@ -33,6 +41,7 @@ def load_env(path: Path) -> None:
 
 def get_connection() -> psycopg2.extensions.connection:
     load_env(ROOT_ENV)
+    load_streamlit_secrets()
     host = os.getenv("DB_HOST_EXTERNAL") or os.getenv("DB_HOST")
     return psycopg2.connect(
         host=host,
@@ -68,6 +77,9 @@ def main() -> None:
 
     st.title("Automotive Finance Monitoring Dashboard")
     st.caption("Auto-refresh every 10 seconds")
+
+    if not ((os.getenv("DB_HOST_EXTERNAL") or os.getenv("DB_HOST") or (hasattr(st, "secrets") and ("DB_HOST_EXTERNAL" in st.secrets or "DB_HOST" in st.secrets))) and (os.getenv("DB_NAME") or (hasattr(st, "secrets") and "DB_NAME" in st.secrets))):
+        st.info("Configure DB connection values in Streamlit secrets or environment variables before using the dashboard.")
 
     metrics_df = load_pipeline_metrics()
     if metrics_df.empty:
