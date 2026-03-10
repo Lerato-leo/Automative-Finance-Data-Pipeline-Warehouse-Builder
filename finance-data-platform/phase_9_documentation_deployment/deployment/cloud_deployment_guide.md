@@ -16,6 +16,7 @@ The application already uses Docker Compose as the canonical local runtime:
 - Airflow metadata PostgreSQL
 - Redis broker
 - Kafka and Zookeeper for streaming
+- Streamlit monitoring dashboard
 
 Use this as the source of truth for service definitions and environment variables.
 
@@ -44,6 +45,7 @@ Steps:
 3. Copy the repository and `.env` values.
 4. Start the stack with `docker compose up -d`.
 5. Run `airflow db migrate` and create the Airflow admin user.
+6. Expose ports `8081` for Airflow and `8501` for the monitoring dashboard.
 
 ## 3. PostgreSQL Warehouse Deployment
 
@@ -80,7 +82,7 @@ Push repository
   -> deploy Airflow runtime
   -> run schema and metrics-table migrations
   -> run one manual DAG execution
-  -> start Streamlit dashboard
+  -> start monitoring-dashboard service
   -> verify notifications and metrics
 ```
 
@@ -90,7 +92,7 @@ Push repository
 - DAG visible and healthy
 - manual DAG run succeeds
 - `pipeline_metrics` receives new rows
-- Streamlit dashboard loads
+- Streamlit dashboard loads on port `8501`
 - email and Teams notifications succeed
 
 ## 7. Deployment Link and Demo Video
@@ -102,3 +104,14 @@ Record these at release time:
 - Airflow deployment URL
 - Streamlit dashboard URL, if exposed publicly
 - demo video link showing an end-to-end DAG run and dashboard verification
+
+## Self-Hosted VM Commands
+
+```bash
+docker compose up -d airflow-postgres airflow-redis airflow-scheduler airflow-webserver airflow-worker monitoring-dashboard
+docker exec airflow-webserver airflow db migrate
+docker exec airflow-webserver airflow users create \
+  --username admin --password change-me \
+  --firstname Admin --lastname User \
+  --role Admin --email admin@example.com
+```

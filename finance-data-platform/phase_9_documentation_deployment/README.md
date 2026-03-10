@@ -51,7 +51,7 @@ phase_9_documentation_deployment/
 - Entire application: Dockerized from the root `docker-compose.yml`
 - Airflow: Astronomer or self-hosted Docker deployment
 - PostgreSQL warehouse: Render or Railway
-- Monitoring dashboard: Streamlit process using the same warehouse connection
+- Monitoring dashboard: Streamlit service in Docker or standalone process using the same warehouse connection
 
 ## Repository Expectations
 
