@@ -10,6 +10,7 @@ import pandas as pd
 import psycopg2
 from psycopg2 import OperationalError
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -29,19 +30,22 @@ def load_runtime_config() -> None:
 def load_streamlit_secrets() -> None:
     if not hasattr(st, "secrets"):
         return
-    for key in (
-        "DB_HOST_EXTERNAL",
-        "DB_HOST",
-        "DB_PORT",
-        "DB_NAME",
-        "DB_USER",
-        "DB_PASSWORD",
-        "DB_SSLMODE",
-        "DATABASE_URL_EXTERNAL",
-        "DATABASE_URL",
-    ):
-        if key in st.secrets:
-            os.environ.setdefault(key, str(st.secrets[key]))
+    try:
+        for key in (
+            "DB_HOST_EXTERNAL",
+            "DB_HOST",
+            "DB_PORT",
+            "DB_NAME",
+            "DB_USER",
+            "DB_PASSWORD",
+            "DB_SSLMODE",
+            "DATABASE_URL_EXTERNAL",
+            "DATABASE_URL",
+        ):
+            if key in st.secrets:
+                os.environ.setdefault(key, str(st.secrets[key]))
+    except StreamlitSecretNotFoundError:
+        return
 
 
 def load_env(path: Path) -> None:
