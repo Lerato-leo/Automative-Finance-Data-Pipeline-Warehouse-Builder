@@ -4,3 +4,4 @@ finance-data-platform/phase_4_python_etl/warehouse_conn.env
 __pycache__/
 *.py[cod]
 finance-data-platform/phase_5_airflow_orchestration/logs/
+finance-data-platform/phase_7_database_administration/backups/
