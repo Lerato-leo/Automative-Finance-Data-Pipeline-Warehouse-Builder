@@ -123,11 +123,10 @@ If the dashboard is deployed directly on Streamlit Cloud, the repository must ex
 Set these values in Streamlit app secrets:
 
 ```toml
-DB_HOST_EXTERNAL = "your-render-host"
-DB_PORT = "5432"
-DB_NAME = "automative_warehousee_ygg3"
-DB_USER = "warehouse_user"
-DB_PASSWORD = "your-password"
+DATABASE_URL_EXTERNAL = "postgresql://warehouse_user:your-password@your-render-host:5432/automative_warehousee_ygg3"
+DB_SSLMODE = "require"
 ```
+
+If you prefer split fields instead of a single URL, set `DB_HOST_EXTERNAL`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD`. For Render or Railway, use `DB_SSLMODE=require`.
 
 Use `finance-data-platform/phase_8_monitoring_logging/dashboard/monitoring_dashboard.py` as the app entrypoint.

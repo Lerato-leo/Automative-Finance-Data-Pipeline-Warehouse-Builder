@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 import psycopg2
+from psycopg2 import OperationalError
 import streamlit as st
 
 try:
@@ -22,7 +24,17 @@ ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 def load_streamlit_secrets() -> None:
     if not hasattr(st, "secrets"):
         return
-    for key in ("DB_HOST_EXTERNAL", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"):
+    for key in (
+        "DB_HOST_EXTERNAL",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_NAME",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_SSLMODE",
+        "DATABASE_URL_EXTERNAL",
+        "DATABASE_URL",
+    ):
         if key in st.secrets:
             os.environ.setdefault(key, str(st.secrets[key]))
 
@@ -39,17 +51,37 @@ def load_env(path: Path) -> None:
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def build_connection_config() -> dict[str, str]:
+    database_url = os.getenv("DATABASE_URL_EXTERNAL") or os.getenv("DATABASE_URL")
+    if database_url:
+        parsed = urlparse(database_url)
+        hostname = parsed.hostname or ""
+        sslmode = os.getenv("DB_SSLMODE") or ("require" if "render.com" in hostname or "railway.app" in hostname else "prefer")
+        return {
+            "host": hostname,
+            "port": str(parsed.port or 5432),
+            "dbname": (parsed.path or "").lstrip("/"),
+            "user": parsed.username or "",
+            "password": parsed.password or "",
+            "sslmode": sslmode,
+        }
+
+    host = os.getenv("DB_HOST_EXTERNAL") or os.getenv("DB_HOST") or ""
+    sslmode = os.getenv("DB_SSLMODE") or ("require" if "render.com" in host or "railway.app" in host else "prefer")
+    return {
+        "host": host,
+        "port": os.getenv("DB_PORT", "5432"),
+        "dbname": os.getenv("DB_NAME", ""),
+        "user": os.getenv("DB_USER", ""),
+        "password": os.getenv("DB_PASSWORD", ""),
+        "sslmode": sslmode,
+    }
+
+
 def get_connection() -> psycopg2.extensions.connection:
     load_env(ROOT_ENV)
     load_streamlit_secrets()
-    host = os.getenv("DB_HOST_EXTERNAL") or os.getenv("DB_HOST")
-    return psycopg2.connect(
-        host=host,
-        port=os.getenv("DB_PORT", "5432"),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-    )
+    return psycopg2.connect(**build_connection_config())
 
 
 @st.cache_data(ttl=10)
@@ -78,10 +110,28 @@ def main() -> None:
     st.title("Automotive Finance Monitoring Dashboard")
     st.caption("Auto-refresh every 10 seconds")
 
-    if not ((os.getenv("DB_HOST_EXTERNAL") or os.getenv("DB_HOST") or (hasattr(st, "secrets") and ("DB_HOST_EXTERNAL" in st.secrets or "DB_HOST" in st.secrets))) and (os.getenv("DB_NAME") or (hasattr(st, "secrets") and "DB_NAME" in st.secrets))):
+    if not (
+        os.getenv("DATABASE_URL_EXTERNAL")
+        or os.getenv("DATABASE_URL")
+        or os.getenv("DB_HOST_EXTERNAL")
+        or os.getenv("DB_HOST")
+        or (hasattr(st, "secrets") and (
+            "DATABASE_URL_EXTERNAL" in st.secrets
+            or "DATABASE_URL" in st.secrets
+            or "DB_HOST_EXTERNAL" in st.secrets
+            or "DB_HOST" in st.secrets
+        ))
+    ):
         st.info("Configure DB connection values in Streamlit secrets or environment variables before using the dashboard.")
 
-    metrics_df = load_pipeline_metrics()
+    try:
+        metrics_df = load_pipeline_metrics()
+    except OperationalError:
+        st.error(
+            "Database connection failed. On Streamlit Cloud, set either DATABASE_URL_EXTERNAL or the DB_HOST_EXTERNAL, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD secrets. Render-hosted PostgreSQL connections usually also require sslmode=require."
+        )
+        st.stop()
+
     if metrics_df.empty:
         st.warning("No pipeline metrics are available yet. Run the Airflow DAG to populate the dashboard.")
         return
