@@ -1,6 +1,15 @@
 # Phase 4: Python ETL Pipeline
 
+**Status:** ✅ Complete  
+**Runtime Role:** Transform staged CSV, JSON, and XLSX data into warehouse-ready tables for the PostgreSQL platform
+
 This module extracts data from the S3 staging bucket (CSV, JSON, XLSX), applies cleaning and business logic, and loads it into the data warehouse (PostgreSQL staging schema).
+
+## Completion Summary
+
+- Phase 4 reads the canonical STAGING bucket produced by Phase 3.
+- It is invoked directly by the Airflow production DAG in Phase 5.
+- It supports the mixed-format raw landing produced by Phase 6 once that data has passed through Phase 3.
 
 ## Features
 - Extracts all CSV, JSON, and XLSX files from the S3 staging bucket
@@ -19,6 +28,12 @@ This module extracts data from the S3 staging bucket (CSV, JSON, XLSX), applies 
    ```
    python etl_main.py
    ```
+
+## Runtime Integration
+
+- Manual runs can use the Phase 4 image or `python etl_main.py`.
+- Normal production execution happens through `automotive_finance_orchestration` in Phase 5.
+- The root compose stack builds this service as `automative-phase4:latest`.
 
 ## Problems Faced & Fixes
 - **Missing Tables/Columns:**

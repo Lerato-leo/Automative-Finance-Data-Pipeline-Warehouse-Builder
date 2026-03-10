@@ -1,8 +1,17 @@
 # 🔄 Phase 5: Airflow Orchestration
 
+**Status:** ✅ Complete  
+**Runtime Role:** Schedule and coordinate the production flow from RAW bucket monitoring through Phase 3, Phase 4, archive, and final notification
+
 ## Overview
 
 Phase 5 now uses a single production DAG named `automotive_finance_orchestration`. Airflow owns the full workflow: monitoring the raw bucket, invoking the real Phase 3 shell ingestion script, invoking the real Phase 4 ETL script, archiving processed staging files, and sending the Phase 5 completion notification.
+
+## Completion Summary
+
+- One canonical DAG owns the supported orchestration path.
+- The DAG runs every 5 minutes and is intended to remain unpaused for automatic processing.
+- Streaming and manual raw-file entry points now converge into this same orchestration layer.
 
 ## 🎯 Objective
 
@@ -79,6 +88,7 @@ docker compose logs -f airflow-worker
 - Airflow scheduler and worker mount the real Phase 3 and Phase 4 folders.
 - The DAG normalizes both `RAW_BUCKET` and `S3_RAW_BUCKET` style variables.
 - Manual and streaming helpers trigger this DAG instead of bypassing Airflow.
+- The root stack builds the Airflow image as `automative-airflow:2.10.5-psycopg2`.
 
 ## 📧 Notifications
 
@@ -231,7 +241,7 @@ curl -X POST $TEAMS_WEBHOOK_URL \
 ---
 
 **Status:** ✅ Operational  
-**Last Updated:** March 9, 2026  
+**Last Updated:** March 10, 2026  
 **DAG:** `automotive_finance_orchestration_dag.py`  
 **Schedule:** Every 5 minutes  
 **Tasks:** 5 (all implemented)

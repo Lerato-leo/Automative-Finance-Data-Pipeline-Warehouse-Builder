@@ -1,8 +1,18 @@
 ## Phase 6: Streaming with Kafka
 
+**Status:** ✅ Complete  
+**Runtime Role:** Simulate real-time source events, batch them into raw S3 files, and feed the same Airflow production DAG used by the batch path
+
 ### 📊 Overview
 
 Phase 6 implements a **realistic streaming data pipeline** that simulates ERP/CRM systems sending real-time events into your automotive data warehouse. Instead of waiting for batch files, data arrives continuously through Kafka topics.
+
+### Completion Summary
+
+- Kafka producers publish 10 canonical datasets.
+- The consumer writes those events into the mixed-format raw S3 layout used by the platform.
+- Airflow then processes those files through the normal Phase 3 → Phase 4 → archive flow.
+- This phase is complete as an integrated upstream path into the main pipeline.
 
 **Architecture Flow:**
 ```
@@ -106,7 +116,7 @@ This starts:
 - Zookeeper (port 2181)
 - Kafka Broker (port 9092)
 - Kafka UI (http://localhost:8888)
-- Airflow UI is available from the root stack at http://localhost:8080
+- Airflow UI is available from the root stack at http://localhost:8081
 
 As part of startup, the supported Phase 6 topics are pre-created before producers run. That prevents the first `--producers all` batch from losing early records while Kafka is auto-creating topics.
 
@@ -148,6 +158,8 @@ The consumer:
 - Accumulates messages
 - Flushes every 100 messages or 5 minutes
 - Writes to the canonical raw prefixes already used by the rest of the platform, preserving the intended per-dataset file formats
+
+With the default producer interval of 5 seconds and `--producers all`, each dataset usually flushes on the 5-minute timeout rather than the 100-message threshold.
 
 Output example:
 ```

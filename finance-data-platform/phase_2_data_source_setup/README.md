@@ -1,8 +1,17 @@
 # 🔌 Phase 2: Data Source Setup
 
+**Status:** ✅ Complete  
+**Scope:** Source registration, extraction patterns, connectivity assumptions, and environment configuration
+
 ## Overview
 
 Phase 2 establishes connections to the 6 data sources for the Automotive Finance Data Pipeline. This phase covers authentication, configuration, and validation of each source system.
+
+## Completion Summary
+
+- The source domains and extraction contracts are defined for ERP, CRM, inventory, procurement, IoT, and reference data.
+- These source contracts inform the Phase 3 raw landing structure and the Phase 6 streaming event model.
+- The repo now uses a unified root environment file for runtime configuration across the stack.
 
 ## 🎯 Objective
 

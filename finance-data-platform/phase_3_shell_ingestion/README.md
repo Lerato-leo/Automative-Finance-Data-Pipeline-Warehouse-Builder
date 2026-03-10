@@ -1,22 +1,25 @@
 # 📥 Phase 3: Shell Ingestion
 
+**Status:** ✅ Complete  
+**Runtime Role:** Validate files already landed in the RAW bucket, move valid objects into STAGING, and send Phase 3 notifications
+
 ## Overview
 
-Phase 3 implements shell scripts and Python utilities for data extraction and ingestion from configured data sources into S3 RAW bucket. This layer handles the initial data landing with validation and error handling.
+Phase 3 implements the ingestion step between the RAW and STAGING buckets. In the current platform, upstream producers or uploads land files in RAW first, and Phase 3 validates those files, copies them into STAGING, removes the processed RAW objects, and emits notifications.
 
 ## 🎯 Objective
 
 Create automated scripts to:
-- ✅ Extract data from 6 sources (ERP, CRM, Inventory, Procurement, IoT, Master Data)
-- ✅ Validate file integrity (schema, format, checksums)
-- ✅ Transfer to S3 RAW bucket with organized folder structure
-- ✅ Log all ingestion events with audit trail
+- ✅ Validate files that have landed in the S3 RAW bucket
+- ✅ Transfer valid files from RAW to STAGING with organized folder structure preserved
+- ✅ Log ingestion events with audit trail
+- ✅ Send email and Teams notifications for processing results
 - ✅ Handle errors gracefully with retry logic
 
 ## 🔄 Data Flow
 
 ```
-Data Sources (ERP, CRM, Inventory, Procurement, IoT, Master Data)
+RAW S3 Bucket
     ↓
 Shell/Python Scripts (Phase 3)
     ├─ Authenticate to source
@@ -24,16 +27,10 @@ Shell/Python Scripts (Phase 3)
     ├─ Validate schema
     ├─ Validate row counts
     ├─ Validate checksums
-    └─ Upload to S3 RAW
+    └─ Copy valid files to S3 STAGING
         ↓
-    S3 RAW Bucket (automotive-raw-data-lerato-2026/)
-        ├─ finance/sales/
-        ├─ finance/payments/
-        ├─ crm/interactions/
-        ├─ operations/inventory/
-        ├─ procurement/orders/
-        ├─ iot/telemetry/
-        └─ reference/master_data/
+    S3 STAGING Bucket (automotive-staging-data-lerato-2026/)
+        └─ ingested/...
 ```
 
 ## 📂 Data Organization
