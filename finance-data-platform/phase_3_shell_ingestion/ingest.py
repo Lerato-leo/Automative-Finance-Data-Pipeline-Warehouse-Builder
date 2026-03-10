@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import requests
+from urllib.request import Request, urlopen
 import boto3
 from botocore.exceptions import ClientError
 
@@ -200,17 +200,21 @@ def send_teams_notification(filename, status, details):
             ]
         }
         
-        response = requests.post(
+        request = Request(
             TEAMS_WEBHOOK,
-            json=payload,
-            timeout=10
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+            method='POST',
         )
-        
-        if response.status_code == 200:
+
+        with urlopen(request, timeout=10) as response:
+            status_code = response.status
+
+        if 200 <= status_code < 300:
             logger.info(f"💬 Teams message posted: {filename}")
             return True
         else:
-            logger.error(f"❌ Teams webhook failed: {response.status_code}")
+            logger.error(f"❌ Teams webhook failed: {status_code}")
             return False
     
     except Exception as e:

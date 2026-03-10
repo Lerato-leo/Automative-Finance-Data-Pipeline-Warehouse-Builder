@@ -1,5 +1,7 @@
 """Single Airflow DAG for the automotive finance orchestration flow."""
 
+# pyright: reportMissingImports=false, reportMissingModuleSource=false
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -9,17 +11,47 @@ from pathlib import Path
 from subprocess import run
 from typing import Any
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 import json
 import os
 import smtplib
 import sys
 
 import boto3
-import requests
-from airflow import DAG
-from airflow.exceptions import AirflowException
-from airflow.operators.python import PythonOperator
-from dotenv import load_dotenv
+try:
+    from airflow import DAG
+    from airflow.exceptions import AirflowException
+    from airflow.operators.python import PythonOperator
+except ModuleNotFoundError:
+    class AirflowException(RuntimeError):
+        """Fallback exception for local editor analysis without Airflow installed."""
+
+
+    class DAG:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+        def __enter__(self) -> "DAG":
+            return self
+
+        def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool:
+            return False
+
+
+    class PythonOperator:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+        def __rshift__(self, other: Any) -> Any:
+            return other
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(*args: Any, **kwargs: Any) -> bool:
+        return False
 
 load_dotenv()
 
@@ -351,9 +383,16 @@ def send_teams_notification(title: str, facts: list[dict[str, str]]) -> None:
         ],
     }
 
-    response = requests.post(TEAMS_WEBHOOK_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
-    if response.status_code != 200:
-        raise AirflowException(f"Teams notification failed with status {response.status_code}")
+    request = Request(
+        TEAMS_WEBHOOK_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with urlopen(request, timeout=15) as response:
+        if not 200 <= response.status < 300:
+            raise AirflowException(f"Teams notification failed with status {response.status}")
 
     print("Phase 5 Teams notification sent.")
 

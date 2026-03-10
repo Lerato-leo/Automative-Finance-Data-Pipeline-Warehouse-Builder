@@ -12,6 +12,7 @@ import sys
 import signal
 import os
 import io
+import json
 from pathlib import Path
 from typing import Optional
 import argparse
@@ -28,6 +29,18 @@ class StreamingOrchestrator:
         self.producer_script = self.phase_dir / "kafka_producer.py"
         self.consumer_script = self.phase_dir / "kafka_consumer.py"
         self.processes = []
+        self.phase6_topics = [
+            'customers_topic',
+            'sales_topic',
+            'vehicles_topic',
+            'dealers_topic',
+            'inventory_topic',
+            'interactions_topic',
+            'payments_topic',
+            'suppliers_topic',
+            'procurement_topic',
+            'telemetry_topic',
+        ]
 
     def run_command(self, command: list, name: str = None, background: bool = False):
         """Run a shell command with status output"""
@@ -69,6 +82,38 @@ class StreamingOrchestrator:
         self.run_command(
             ["docker-compose", "-f", str(self.docker_compose_file), "ps"],
             name="Kafka Status Check"
+        )
+
+        self.run_command(
+            [
+                "docker",
+                "exec",
+                "automotive-kafka",
+                "bash",
+                "-lc",
+                " ; ".join(
+                    [
+                        (
+                            "kafka-topics --bootstrap-server localhost:9092 "
+                            f"--create --if-not-exists --topic {topic} --partitions 1 --replication-factor 1"
+                        )
+                        for topic in self.phase6_topics
+                    ]
+                ),
+            ],
+            name="Pre-create Phase 6 Kafka topics"
+        )
+
+        self.run_command(
+            [
+                "docker",
+                "exec",
+                "automotive-kafka",
+                "bash",
+                "-lc",
+                "kafka-topics --bootstrap-server localhost:9092 --list",
+            ],
+            name="List Kafka topics"
         )
         
         print("\n✅ Kafka Infrastructure Started!")
@@ -189,7 +234,7 @@ class StreamingOrchestrator:
             print("="*70)
             print("\nData Flow Summary:")
             print("  Producers → Kafka Topics → Consumer")
-            print("  → Batched into CSV → S3 raw folder")
+            print("  → Batched into CSV/JSON/XLSX → S3 raw folder")
             print("  → Airflow automotive_finance_orchestration triggers")
             print("  → ETL processes data → Warehouse")
             
@@ -231,7 +276,7 @@ Examples:
     parser.add_argument('--kafka-start', action='store_true', help='Start Kafka infrastructure')
     parser.add_argument('--kafka-stop', action='store_true', help='Stop Kafka infrastructure')
     parser.add_argument('--producers', type=str, nargs='?', const='all',
-                       choices=['sales', 'payments', 'interactions', 'inventory', 'procurement', 'telemetry', 'all'],
+                       choices=['customers', 'sales', 'vehicles', 'dealers', 'inventory', 'interactions', 'payments', 'suppliers', 'procurement', 'telemetry', 'all'],
                        help='Start producer(s)')
     parser.add_argument('--interval', type=int, default=5, help='Seconds between events (default: 5)')
     parser.add_argument('--count', type=int, default=None, help='Total events to produce (default: infinite)')

@@ -1,11 +1,12 @@
-FROM apache/airflow:2.7.3-python3.11
+FROM apache/airflow:2.10.5-python3.11
 
 USER root
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 USER airflow
 

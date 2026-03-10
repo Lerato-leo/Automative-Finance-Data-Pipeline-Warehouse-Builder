@@ -17,6 +17,7 @@ services:
       - phase3-standalone
     environment:
       AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       S3_RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
@@ -66,6 +67,34 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ============================================
+  # PHASE 4: PYTHON ETL SERVICE
+  # ============================================
+  phase-4-etl:
+    build:
+      context: ./finance-data-platform/phase_4_python_etl
+      dockerfile: Dockerfile
+    container_name: phase-4-etl
+    image: automative-phase4:latest
+    profiles:
+      - phase4-manual
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      WAREHOUSE_CONN: dbname=${DB_NAME} user=${DB_USER} password=${DB_PASSWORD} host=${DB_HOST_EXTERNAL:-localhost} port=${DB_PORT:-5432}
+      PYTHONUNBUFFERED: 1
+    networks:
+      - data-platform
+    restart: "no"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   # ============================================
   # PHASE 5: AIRFLOW ORCHESTRATION
@@ -121,11 +150,11 @@ services:
     environment:
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://airflow-redis:6379/0
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
       AIRFLOW___CORE__DAG_FILE_PROCESSOR_TIMEOUT: 120
-      AIRFLOW_CORE_LOAD_EXAMPLES: 'false'
       AIRFLOW_VAR_AWS_REGION: ${AWS_REGION:-us-east-1}
       AIRFLOW_VAR_AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AIRFLOW_VAR_AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -181,10 +210,32 @@ services:
     environment:
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://airflow-redis:6379/0
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
-      AIRFLOW_CORE_LOAD_EXAMPLES: 'false'
+      AIRFLOW_VAR_AWS_REGION: ${AWS_REGION:-us-east-1}
+      AIRFLOW_VAR_AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AIRFLOW_VAR_AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AIRFLOW_VAR_S3_RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      AIRFLOW_VAR_S3_STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      AIRFLOW_VAR_S3_ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-automotive-archive-data-lerato-2026}
+      AIRFLOW_VAR_SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      AIRFLOW_VAR_SMTP_USER: ${SMTP_USER}
+      AIRFLOW_VAR_SMTP_PASSWORD: ${SMTP_PASSWORD}
+      AIRFLOW_VAR_EMAIL_RECIPIENT: ${SMTP_TO:-lerato.matamela01@gmail.com}
+      AIRFLOW_VAR_TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
+      RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      STAGING_BUCKET: ${STAGING_BUCKET:-automotive-staging-data-lerato-2026}
+      ARCHIVE_BUCKET: ${ARCHIVE_BUCKET:-automotive-archive-data-lerato-2026}
+      WAREHOUSE_CONN: dbname=${DB_NAME} user=${DB_USER} password=${DB_PASSWORD} host=${DB_HOST_EXTERNAL:-localhost} port=${DB_PORT:-5432}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_MAIL_FROM: ${SMTP_MAIL_FROM:-notifications@automativedata.com}
+      SMTP_TO: ${SMTP_TO:-lerato.matamela01@gmail.com}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
       PIPELINE_PROJECT_ROOT: /opt/airflow/project
     volumes:
       - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
@@ -218,10 +269,10 @@ services:
     environment:
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://airflow-redis:6379/0
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
-      AIRFLOW_CORE_LOAD_EXAMPLES: 'false'
       AIRFLOW_VAR_AWS_REGION: ${AWS_REGION:-us-east-1}
       AIRFLOW_VAR_AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AIRFLOW_VAR_AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -262,6 +313,132 @@ services:
         max-file: "3"
 
   # ============================================
+  # PHASE 6: KAFKA STREAMING
+  # ============================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: automotive-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - data-platform
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: automotive-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - data-platform
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: automotive-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8888:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: automotive
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - data-platform
+    restart: unless-stopped
+
+  phase-6-consumer:
+    build:
+      context: ./finance-data-platform/phase_6_streaming_kafka
+      dockerfile: Dockerfile
+    container_name: phase-6-consumer
+    image: automative-phase6:latest
+    profiles:
+      - phase6-streaming
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      RAW_BUCKET: ${RAW_BUCKET:-automotive-raw-data-lerato-2026}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_GROUP_ID: automotive-consumer-group
+      PYTHONUNBUFFERED: 1
+    command: ["python", "kafka_consumer.py", "--batch-size", "${PHASE6_BATCH_SIZE:-5}", "--timeout", "${PHASE6_BATCH_TIMEOUT:-10}"]
+    networks:
+      - data-platform
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  phase-6-producer:
+    build:
+      context: ./finance-data-platform/phase_6_streaming_kafka
+      dockerfile: Dockerfile
+    image: automative-phase6:latest
+    container_name: phase-6-producer
+    profiles:
+      - phase6-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      PYTHONUNBUFFERED: 1
+      PHASE6_PRODUCER_TYPE: ${PHASE6_PRODUCER_TYPE:-all}
+      PHASE6_PRODUCER_INTERVAL: ${PHASE6_PRODUCER_INTERVAL:-1}
+      PHASE6_PRODUCER_COUNT: ${PHASE6_PRODUCER_COUNT:-10}
+    command:
+      - sh
+      - -c
+      - python kafka_producer.py --type "$$PHASE6_PRODUCER_TYPE" --interval "$$PHASE6_PRODUCER_INTERVAL" --count "$$PHASE6_PRODUCER_COUNT"
+    networks:
+      - data-platform
+    restart: "no"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # ============================================
   # NETWORKS & VOLUMES
   # ============================================
 
@@ -272,3 +449,5 @@ networks:
 volumes:
   phase3_postgres_data:
   airflow_postgres_data:
+  zookeeper-data:
+  kafka-data:
