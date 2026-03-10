@@ -4,7 +4,7 @@ A comprehensive, production-ready data engineering pipeline for automotive finan
 
 ## 📋 Overview
 
-This project implements a complete data pipeline architecture with 10 phases. Phases 1 through 6 are now implemented and wired together end to end.
+This project implements a complete data pipeline architecture with 10 phases, counting Phase 0 environment setup. Phases 1 through 8 are now implemented and wired together end to end, and Phase 9 packages the documentation and deployment handoff.
 
 | Phase | Name | Status | Purpose |
 |-------|------|--------|---------|
@@ -15,14 +15,15 @@ This project implements a complete data pipeline architecture with 10 phases. Ph
 | 4 | Python ETL | ✅ Complete | Data transformation & enrichment |
 | 5 | Airflow Orchestration | ✅ Complete | Workflow scheduling & automation |
 | 6 | Kafka Streaming | ✅ Complete | Real-time data streaming into the unified pipeline |
-| 7 | Database Administration | 📋 Planned | Performance tuning & optimization |
-| 8 | Monitoring & Logging | 📋 Planned | Observability & alerting |
-| 9 | Documentation & Deployment | 📋 Planned | Final documentation & CI/CD |
+| 7 | Database Administration | ✅ Complete | Backup, restore, maintenance, and performance administration |
+| 8 | Monitoring & Logging | ✅ Complete | Integrated observability, alerts, metrics, and dashboard |
+| 9 | Documentation & Deployment | 🛠️ In Progress | Documentation package, deployment guidance, and release handoff |
 
 ## ✅ Current Delivery Status
 
-- Phases 1 to 6 are complete and integrated.
+- Phases 1 to 8 are implemented in the workspace.
 - Phase 6 streaming now lands mixed-format raw files into S3 and feeds the same Airflow DAG used by the batch path.
+- Phase 9 now contains the documentation package, deployment guidance, and release checklist artifacts.
 - The canonical root stack is [docker-compose.yml](c:\Users\lerat\Documents\Project 4 - Data\Automative-Finance-Data-Pipeline-Warehouse-Builder\docker-compose.yml).
 
 ## 🎯 Key Feature: Single Orchestration DAG
@@ -169,7 +170,7 @@ finance-data-platform/
 │   └── README.md
 ├── phase_8_monitoring_logging/
 │   └── README.md
-└── phase_10_documentation_deployment/
+└── phase_9_documentation_deployment/
     └── README.md
 
 docker-compose.yml
@@ -370,7 +371,7 @@ Each phase has detailed README with architecture, data flow, and implementation 
 - **[Phase 6](finance-data-platform/phase_6_streaming_kafka/README.md)** - Kafka streaming
 - **[Phase 7](finance-data-platform/phase_7_database_administration/README.md)** - DB optimization
 - **[Phase 8](finance-data-platform/phase_8_monitoring_logging/README.md)** - Monitoring setup
-- **[Phase 10](finance-data-platform/phase_10_documentation_deployment/README.md)** - Documentation
+- **[Phase 9](finance-data-platform/phase_9_documentation_deployment/README.md)** - Documentation & deployment
 
 ## 📈 Performance Metrics
 
@@ -411,10 +412,27 @@ Each phase has detailed README with architecture, data flow, and implementation 
 - Advanced analytics
 
 ### Long Term (Phase 9)
-- Production deployment
-- CI/CD pipeline
-- Documentation package
+- Public deployment handoff
+- Deployment verification and smoke tests
+- Demo recording and stakeholder walkthrough
 - Knowledge transfer
+
+## 🗺️ Architecture Diagram
+
+```mermaid
+flowchart LR
+  A[Source Files\nCSV JSON XLSX] --> B[S3 RAW Bucket]
+  K[Kafka Streaming Producer] --> L[Kafka Consumer]
+  L --> B
+  B --> C[Airflow DAG\nautomotive_finance_orchestration]
+  C --> D[Phase 3 Shell Ingestion]
+  D --> E[S3 STAGING Bucket]
+  E --> F[Phase 4 Python ETL]
+  F --> G[PostgreSQL Warehouse]
+  F --> H[Phase 8 pipeline_metrics]
+  C --> I[S3 ARCHIVE Bucket]
+  H --> J[Streamlit Monitoring Dashboard]
+```
 
 ## 📄 License
 
