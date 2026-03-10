@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import logging
 from pathlib import Path
 from subprocess import run
 from typing import Any
@@ -14,10 +15,13 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 import json
 import os
+import re
 import smtplib
 import sys
+from time import perf_counter
 
 import boto3
+import psycopg2
 try:
     from airflow import DAG
     from airflow.exceptions import AirflowException
@@ -55,6 +59,8 @@ except ModuleNotFoundError:
 
 load_dotenv()
 
+LOGGER = logging.getLogger(__name__)
+
 
 def get_env_value(*names: str, default: str | None = None) -> str | None:
     for name in names:
@@ -68,6 +74,13 @@ AIRFLOW_HOME = os.getenv("AIRFLOW_HOME", "/opt/airflow")
 PROJECT_ROOT = os.getenv("PIPELINE_PROJECT_ROOT", "/opt/airflow/project")
 PHASE_3_SCRIPT = os.path.join(PROJECT_ROOT, "phase_3_shell_ingestion", "ingest.py")
 PHASE_4_SCRIPT = os.path.join(PROJECT_ROOT, "phase_4_python_etl", "etl_main.py")
+PHASE_8_PIPELINE_METRICS_SQL = os.path.join(
+    PROJECT_ROOT,
+    "phase_8_monitoring_logging",
+    "sql",
+    "create_pipeline_metrics_table.sql",
+)
+PIPELINE_NAME = "automotive_finance_pipeline"
 
 AWS_REGION = get_env_value(
     "AWS_REGION",
@@ -122,6 +135,13 @@ SMTP_TO = get_env_value(
     default="lerato.matamela01@gmail.com",
 )
 TEAMS_WEBHOOK_URL = get_env_value("TEAMS_WEBHOOK_URL", "AIRFLOW_VAR_TEAMS_WEBHOOK_URL")
+PIPELINE_SLA_THRESHOLD_SECONDS = int(
+    get_env_value(
+        "PIPELINE_SLA_THRESHOLD_SECONDS",
+        "AIRFLOW_VAR_PIPELINE_SLA_THRESHOLD_SECONDS",
+        default="600",
+    )
+)
 
 
 def get_s3_client() -> Any:
@@ -130,6 +150,170 @@ def get_s3_client() -> Any:
         client_args["aws_access_key_id"] = AWS_ACCESS_KEY
         client_args["aws_secret_access_key"] = AWS_SECRET_KEY
     return boto3.client(**client_args)
+
+
+def get_warehouse_connection() -> Any:
+    warehouse_conn = build_warehouse_conn()
+    if not warehouse_conn:
+        raise AirflowException("WAREHOUSE_CONN could not be built for pipeline metrics storage")
+    return psycopg2.connect(warehouse_conn)
+
+
+def ensure_pipeline_metrics_table() -> None:
+    sql_path = Path(PHASE_8_PIPELINE_METRICS_SQL)
+    if not sql_path.exists():
+        raise AirflowException(f"Pipeline metrics SQL file not found: {sql_path}")
+
+    with get_warehouse_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql_path.read_text(encoding="utf-8"))
+        conn.commit()
+
+
+def extract_script_summary(stdout: str) -> dict[str, Any] | None:
+    for line in reversed(stdout.splitlines()):
+        if line.startswith("ETL_SUMMARY::"):
+            payload = line.split("ETL_SUMMARY::", 1)[1].strip()
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                LOGGER.warning("Failed to parse ETL summary payload from script output")
+                return None
+    return None
+
+
+def compute_dag_processing_time_seconds(context: Any) -> float:
+    dag_run = context.get("dag_run")
+    if dag_run and dag_run.start_date:
+        return round((datetime.now(timezone.utc) - dag_run.start_date).total_seconds(), 2)
+    return 0.0
+
+
+def collect_pipeline_metrics_payload(context: Any, status: str) -> dict[str, Any]:
+    task_instance = context["task_instance"]
+    raw_files = task_instance.xcom_pull(task_ids="monitor_raw_bucket", key="raw_files") or []
+    phase_4_result = task_instance.xcom_pull(task_ids="run_phase_4_etl") or {}
+    phase_4_summary = phase_4_result.get("summary") or {}
+    files_processed = phase_4_summary.get("files_processed") or phase_4_result.get("file_count") or len(raw_files)
+    rows_loaded = phase_4_summary.get("rows_loaded") or phase_4_result.get("rows_loaded") or 0
+
+    return {
+        "pipeline_name": PIPELINE_NAME,
+        "dag_id": context["dag"].dag_id,
+        "files_processed": int(files_processed),
+        "rows_loaded": int(rows_loaded),
+        "processing_time_seconds": compute_dag_processing_time_seconds(context),
+        "status": status,
+        "run_timestamp": context["logical_date"],
+    }
+
+
+def persist_pipeline_metrics(context: Any, status: str) -> dict[str, Any]:
+    ensure_pipeline_metrics_table()
+    payload = collect_pipeline_metrics_payload(context, status)
+
+    with get_warehouse_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM pipeline_metrics WHERE dag_id = %s AND run_timestamp = %s",
+                (payload["dag_id"], payload["run_timestamp"]),
+            )
+            cursor.execute(
+                """
+                INSERT INTO pipeline_metrics (
+                    pipeline_name,
+                    dag_id,
+                    files_processed,
+                    rows_loaded,
+                    processing_time_seconds,
+                    status,
+                    run_timestamp
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    payload["pipeline_name"],
+                    payload["dag_id"],
+                    payload["files_processed"],
+                    payload["rows_loaded"],
+                    payload["processing_time_seconds"],
+                    payload["status"],
+                    payload["run_timestamp"],
+                ),
+            )
+        conn.commit()
+
+    LOGGER.info("Pipeline metrics stored | status=%s | files_processed=%s | rows_loaded=%s | processing_time_seconds=%.2f", payload["status"], payload["files_processed"], payload["rows_loaded"], payload["processing_time_seconds"])
+    return payload
+
+
+def send_alert_notification(title: str, body: str, facts: list[dict[str, str]]) -> None:
+    try:
+        send_email(title, body)
+    except Exception as exc:
+        LOGGER.warning("Email alert delivery failed | title=%s | error=%s", title, exc)
+
+    try:
+        send_teams_notification(title, facts)
+    except Exception as exc:
+        LOGGER.warning("Teams alert delivery failed | title=%s | error=%s", title, exc)
+
+
+def build_failure_alert_title(error_message: str) -> str:
+    if "Data quality validation failed" in error_message:
+        return "Automotive Finance Data Quality Failure"
+    return "Automotive Finance Pipeline Failure"
+
+
+def notify_on_pipeline_failure(context: Any) -> None:
+    error_message = str(context.get("exception") or "Unknown pipeline failure")
+    title = build_failure_alert_title(error_message)
+    body = (
+        f"{title}\n"
+        f"DAG: {context['dag'].dag_id}\n"
+        f"Task: {context['task_instance'].task_id}\n"
+        f"Execution Date: {context['logical_date']}\n"
+        f"Error: {error_message}\n"
+    )
+
+    send_alert_notification(
+        title,
+        body,
+        [
+            {"title": "DAG", "value": context["dag"].dag_id},
+            {"title": "Task", "value": context["task_instance"].task_id},
+            {"title": "Execution", "value": str(context["logical_date"])},
+            {"title": "Error", "value": error_message[:300]},
+        ],
+    )
+
+    persist_pipeline_metrics(context, "FAILED")
+
+
+def notify_on_sla_breach(context: Any, payload: dict[str, Any]) -> None:
+    if payload["processing_time_seconds"] <= PIPELINE_SLA_THRESHOLD_SECONDS:
+        return
+
+    title = "Automotive Finance Performance Degradation Alert"
+    body = (
+        f"{title}\n"
+        f"DAG: {payload['dag_id']}\n"
+        f"Run Timestamp: {payload['run_timestamp']}\n"
+        f"Processing Time: {payload['processing_time_seconds']} seconds\n"
+        f"SLA Threshold: {PIPELINE_SLA_THRESHOLD_SECONDS} seconds\n"
+    )
+
+    send_alert_notification(
+        title,
+        body,
+        [
+            {"title": "DAG", "value": payload["dag_id"]},
+            {"title": "Files", "value": str(payload["files_processed"])},
+            {"title": "Rows Loaded", "value": str(payload["rows_loaded"])},
+            {"title": "Processing Time", "value": f"{payload['processing_time_seconds']} seconds"},
+            {"title": "SLA", "value": f"{PIPELINE_SLA_THRESHOLD_SECONDS} seconds"},
+        ],
+    )
 
 
 def list_bucket_files(bucket_name: str) -> list[str]:
@@ -233,6 +417,8 @@ def run_python_script(script_path: str, task_name: str, extra_env: dict[str, str
     if extra_env:
         env.update(extra_env)
 
+    started_at = perf_counter()
+
     completed = run(
         [sys.executable, script_path],
         cwd=str(Path(script_path).parent),
@@ -248,20 +434,25 @@ def run_python_script(script_path: str, task_name: str, extra_env: dict[str, str
     if completed.stderr:
         print(completed.stderr)
 
+    script_summary = extract_script_summary(completed.stdout)
+    duration_seconds = round(perf_counter() - started_at, 2)
+
     if completed.returncode != 0:
         raise AirflowException(f"{task_name} failed with exit code {completed.returncode}")
 
     return {
         "returncode": completed.returncode,
+        "duration_seconds": duration_seconds,
         "stdout": completed.stdout[-4000:],
         "stderr": completed.stderr[-4000:],
+        "summary": script_summary,
     }
 
 
 def monitor_raw_bucket(**context: Any) -> dict[str, Any]:
     raw_files = list_bucket_files(S3_RAW_BUCKET)
     context["task_instance"].xcom_push(key="raw_files", value=raw_files)
-    print(f"Found {len(raw_files)} file(s) in the raw bucket.")
+    LOGGER.info("Raw bucket scan complete | file_count=%s", len(raw_files))
     return {"file_count": len(raw_files), "files": raw_files}
 
 
@@ -269,10 +460,10 @@ def run_phase_3_shell_ingestion(**context: Any) -> dict[str, Any]:
     raw_files = context["task_instance"].xcom_pull(task_ids="monitor_raw_bucket", key="raw_files") or []
     if not raw_files:
         context["task_instance"].xcom_push(key="staging_keys_for_run", value=[])
-        print("No raw files found. Phase 3 ingestion skipped.")
+        LOGGER.info("Phase 3 ingestion skipped because no raw files were found")
         return {"status": "skipped_no_files", "processed_files": 0, "staging_keys": []}
 
-    run_python_script(PHASE_3_SCRIPT, "Phase 3 shell ingestion")
+    script_result = run_python_script(PHASE_3_SCRIPT, "Phase 3 shell ingestion")
 
     staging_keys = [f"ingested/{Path(key).name}" for key in raw_files]
     context["task_instance"].xcom_push(key="staging_keys_for_run", value=staging_keys)
@@ -280,6 +471,7 @@ def run_phase_3_shell_ingestion(**context: Any) -> dict[str, Any]:
         "status": "success",
         "processed_files": len(raw_files),
         "staging_keys": staging_keys,
+        "script_result": script_result,
     }
 
 
@@ -290,7 +482,7 @@ def run_phase_4_etl(**context: Any) -> dict[str, Any]:
     ) or []
 
     if not staging_keys:
-        print("No staged files for this run. Phase 4 ETL skipped.")
+        LOGGER.info("Phase 4 ETL skipped because there were no staged files for the current run")
         return {"status": "skipped_no_files", "file_count": 0}
 
     script_result = run_python_script(
@@ -301,7 +493,14 @@ def run_phase_4_etl(**context: Any) -> dict[str, Any]:
             "CURRENT_RUN_STAGING_KEYS": json.dumps(staging_keys),
         },
     )
-    return {"status": "success", "file_count": len(staging_keys), "script_result": script_result}
+    summary = script_result.get("summary") or {}
+    return {
+        "status": "success",
+        "file_count": len(staging_keys),
+        "rows_loaded": summary.get("rows_loaded", 0),
+        "script_result": script_result,
+        "summary": summary,
+    }
 
 
 def archive_processed_staging_files(**context: Any) -> dict[str, Any]:
@@ -311,7 +510,7 @@ def archive_processed_staging_files(**context: Any) -> dict[str, Any]:
     ) or []
 
     if not staging_keys:
-        print("No staged files to archive.")
+        LOGGER.info("No staged files to archive for the current run")
         return {"archived_count": 0, "archived_files": []}
 
     s3_client = get_s3_client()
@@ -333,7 +532,7 @@ def archive_processed_staging_files(**context: Any) -> dict[str, Any]:
         )
         s3_client.delete_object(Bucket=S3_STAGING_BUCKET, Key=staging_key)
         archived_files.append(archive_key)
-        print(f"Archived {staging_key} to {archive_key}")
+        LOGGER.info("Archived staged object | source=%s | destination=%s", staging_key, archive_key)
 
     return {"archived_count": len(archived_files), "archived_files": archived_files}
 
@@ -402,6 +601,7 @@ def send_phase_5_airflow_notification(**context: Any) -> dict[str, Any]:
     phase_3_result = context["task_instance"].xcom_pull(task_ids="run_phase_3_shell_ingestion") or {}
     phase_4_result = context["task_instance"].xcom_pull(task_ids="run_phase_4_etl") or {}
     archive_result = context["task_instance"].xcom_pull(task_ids="archive_processed_staging_files") or {}
+    dag_duration_seconds = compute_dag_processing_time_seconds(context)
 
     execution_date = context["logical_date"]
     dag_id = context["dag"].dag_id
@@ -415,6 +615,7 @@ def send_phase_5_airflow_notification(**context: Any) -> dict[str, Any]:
         f"Phase 3 status: {phase_3_result.get('status', 'unknown')}\n"
         f"Phase 4 status: {phase_4_result.get('status', 'unknown')}\n"
         f"Archived files: {archive_result.get('archived_count', 0)}\n\n"
+        f"Processing time (seconds): {dag_duration_seconds}\n\n"
         "Flow executed:\n"
         "1. Airflow monitored the S3 raw bucket\n"
         "2. Phase 3 shell ingestion moved data from raw to staging\n"
@@ -433,8 +634,12 @@ def send_phase_5_airflow_notification(**context: Any) -> dict[str, Any]:
             {"title": "Phase 3", "value": str(phase_3_result.get("status", "unknown"))},
             {"title": "Phase 4", "value": str(phase_4_result.get("status", "unknown"))},
             {"title": "Archived", "value": str(archive_result.get("archived_count", 0))},
+            {"title": "Duration", "value": f"{dag_duration_seconds} seconds"},
         ],
     )
+
+    metrics_payload = persist_pipeline_metrics(context, "SUCCESS")
+    notify_on_sla_breach(context, metrics_payload)
 
     return {
         "status": "success",
@@ -443,6 +648,7 @@ def send_phase_5_airflow_notification(**context: Any) -> dict[str, Any]:
             "phase_3": phase_3_result.get("status", "unknown"),
             "phase_4": phase_4_result.get("status", "unknown"),
             "archived_count": archive_result.get("archived_count", 0),
+            "processing_time_seconds": dag_duration_seconds,
         },
     }
 
@@ -455,6 +661,7 @@ default_args = {
     "email_on_retry": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
+    "on_failure_callback": notify_on_pipeline_failure,
 }
 
 

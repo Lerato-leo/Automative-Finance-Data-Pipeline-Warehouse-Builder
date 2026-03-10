@@ -2,51 +2,39 @@
 
 ## Overview
 
-Phase 8 provides monitoring, logging, and observability for the automotive finance data platform. Monitoring focuses on the single orchestration DAG, the data warehouse, and the supporting runtime services.
+Phase 8 now integrates observability directly into the existing Automotive Finance pipeline. Logging is emitted from the Phase 3 and Phase 4 scripts into Airflow task logs, data-quality checks can fail the DAG run, every DAG run writes a monitoring record into PostgreSQL, and a Streamlit dashboard visualizes pipeline health from the warehouse.
 
-## What To Monitor
+## Deliverables
 
-- `automotive_finance_orchestration` run success and duration
-- Phase 3 ingestion outcomes and notification delivery
-- Phase 4 ETL processing rates and data quality failures
-- PostgreSQL health, storage, and connection pressure
-- Container health for Airflow, Kafka, and supporting services
-
-## Airflow Focus
-
-```
-automotive_finance_orchestration
-├── monitor_raw_bucket
-├── run_phase_3_shell_ingestion
-├── run_phase_4_etl
-├── archive_processed_staging_files
-└── send_phase_5_airflow_notification
+```text
+phase_8_monitoring_logging/
+├── dashboard/
+│   └── monitoring_dashboard.py
+├── docs/
+│   └── monitoring_architecture.md
+├── logging/
+│   └── logging_config.py
+├── sql/
+│   └── create_pipeline_metrics_table.sql
+└── README.md
 ```
 
-## Example Log Flow
+## What This Phase Implements
 
-```
-2026-03-09T10:05:00 [INFO] [automotive_finance_orchestration] DAG START
-2026-03-09T10:05:10 [INFO] [monitor_raw_bucket] Found 4 files
-2026-03-09T10:05:30 [INFO] [run_phase_3_shell_ingestion] Phase 3 completed
-2026-03-09T10:06:20 [INFO] [run_phase_4_etl] Phase 4 completed
-2026-03-09T10:06:40 [INFO] [archive_processed_staging_files] Archived 4 files
-2026-03-09T10:06:45 [INFO] [automotive_finance_orchestration] DAG SUCCESS
-```
+- execution logging for Phase 3 ingestion, Phase 4 ETL, and the Airflow DAG
+- data-quality validation for row counts, null counts, duplicate detection, and schema checks
+- pipeline metrics storage in `pipeline_metrics`
+- alerts for failures, quality validation failures, and SLA overruns using email and Teams
+- a Streamlit dashboard for success/failure rates, volume trends, processing times, recent runs, and files processed
 
-## Operational Checks
+## Run Order
 
-```bash
-docker compose logs -f airflow-scheduler
-docker compose logs -f airflow-worker
-docker exec airflow-webserver airflow dags list | grep automotive_finance_orchestration
-docker exec airflow-postgres psql -U airflow -d airflow -c "SELECT dag_id, state FROM dag_run ORDER BY execution_date DESC LIMIT 10;"
-```
+1. Apply `sql/create_pipeline_metrics_table.sql` to the warehouse.
+2. Deploy the updated Airflow DAG and ETL scripts.
+3. Start the Streamlit dashboard with `streamlit run phase_8_monitoring_logging/dashboard/monitoring_dashboard.py`.
+4. Review the system design in `docs/monitoring_architecture.md`.
 
-## Alerts
+## Status
 
-- DAG failure or repeated retries
-- No successful run within the expected five-minute interval
-- Phase 3 ingestion failures or missing notifications
-- Phase 4 ETL failures or abnormal record counts
-- Archive task failures leaving processed data in staging
+**Status:** ✅ Implemented  
+**Last Updated:** March 10, 2026

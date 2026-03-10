@@ -6,5 +6,7 @@ faker
 openpyxl
 kafka-python
 requests  # Required for Airflow Team notifications
+streamlit
+streamlit-autorefresh
 
 # Airflow is managed via Docker in phase_5_airflow_orchestration

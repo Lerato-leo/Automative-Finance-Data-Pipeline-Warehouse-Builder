@@ -179,11 +179,12 @@ services:
       TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
       PIPELINE_PROJECT_ROOT: /opt/airflow/project
     volumes:
-      - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
-      - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
-      - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
-      - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
-      - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+        - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
+        - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
+        - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
+        - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
+        - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+        - ./finance-data-platform/phase_8_monitoring_logging:/opt/airflow/project/phase_8_monitoring_logging
     ports:
       - "8793:8793"
     networks:
@@ -238,11 +239,12 @@ services:
       TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
       PIPELINE_PROJECT_ROOT: /opt/airflow/project
     volumes:
-      - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
-      - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
-      - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
-      - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
-      - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+        - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
+        - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
+        - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
+        - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
+        - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+        - ./finance-data-platform/phase_8_monitoring_logging:/opt/airflow/project/phase_8_monitoring_logging
     ports:
       - "8081:8080"
     networks:
@@ -297,11 +299,12 @@ services:
       TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL}
       PIPELINE_PROJECT_ROOT: /opt/airflow/project
     volumes:
-      - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
-      - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
-      - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
-      - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
-      - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+        - ./finance-data-platform/phase_5_airflow_orchestration/dags:/opt/airflow/dags
+        - ./finance-data-platform/phase_5_airflow_orchestration/plugins:/opt/airflow/plugins
+        - ./finance-data-platform/phase_5_airflow_orchestration/logs:/opt/airflow/logs
+        - ./finance-data-platform/phase_3_shell_ingestion:/opt/airflow/project/phase_3_shell_ingestion
+        - ./finance-data-platform/phase_4_python_etl:/opt/airflow/project/phase_4_python_etl
+        - ./finance-data-platform/phase_8_monitoring_logging:/opt/airflow/project/phase_8_monitoring_logging
     networks:
       - data-platform
     command: celery worker

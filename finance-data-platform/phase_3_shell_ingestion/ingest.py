@@ -9,6 +9,7 @@ import sys
 import logging
 import json
 import smtplib
+from time import perf_counter
 from datetime import datetime, timezone
 from pathlib import Path
 from email.mime.text import MIMEText
@@ -17,12 +18,15 @@ from urllib.request import Request, urlopen
 import boto3
 from botocore.exceptions import ClientError
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from phase_8_monitoring_logging.logging.logging_config import configure_pipeline_logger
+
+
+logger = configure_pipeline_logger("phase_3_shell_ingestion")
 
 # AWS Configuration
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
@@ -43,6 +47,17 @@ TEAMS_WEBHOOK = os.getenv('TEAMS_WEBHOOK_URL')
 
 # S3 Client
 s3_client = boto3.client('s3', region_name=AWS_REGION)
+
+
+def detect_file_type(key):
+    extension_map = {
+        '.csv': 'CSV',
+        '.json': 'JSON',
+        '.xlsx': 'Excel',
+        '.parquet': 'Parquet',
+        '.avro': 'Avro',
+    }
+    return extension_map.get(Path(key).suffix.lower(), 'Unknown')
 
 
 def validate_file(bucket, key):
@@ -226,11 +241,8 @@ def process_bucket():
     """
     Main ingestion loop: scan RAW bucket, validate, move to STAGING
     """
-    logger.info("\n" + "="*70)
-    logger.info("🔄 PHASE 3: Data Ingestion - File Movement with Notifications")
-    logger.info("="*70)
-    logger.info(f"RAW bucket: {RAW_BUCKET}")
-    logger.info(f"STAGING bucket: {STAGING_BUCKET}\n")
+    pipeline_started_at = perf_counter()
+    logger.info("Pipeline start | stage=phase_3_ingestion | raw_bucket=%s | staging_bucket=%s", RAW_BUCKET, STAGING_BUCKET)
     
     processed_count = 0
     failed_count = 0
@@ -252,13 +264,20 @@ def process_bucket():
                 if key.endswith('/'):
                     continue
                 
-                logger.info(f"\n📂 Processing: {key}")
+                file_started_at = perf_counter()
+                file_type = detect_file_type(key)
+                logger.info("File ingestion start | file_name=%s | file_type=%s", key, file_type)
                 
                 # Validate file
                 is_valid, error_msg = validate_file(RAW_BUCKET, key)
                 
                 if not is_valid:
-                    logger.warning(f"✗ Validation failed: {error_msg}")
+                    logger.warning(
+                        "File ingestion validation failed | file_name=%s | file_type=%s | error=%s",
+                        key,
+                        file_type,
+                        error_msg,
+                    )
                     send_email_notification(key, 'failure', f"Validation failed: {error_msg}")
                     send_teams_notification(key, 'failure', f"Validation failed: {error_msg}")
                     failed_count += 1
@@ -267,25 +286,38 @@ def process_bucket():
                 # Move file to staging
                 staging_key = f"ingested/{key.split('/')[-1]}"
                 if move_file(RAW_BUCKET, key, STAGING_BUCKET, staging_key):
-                    logger.info(f"✓ File successfully moved: {staging_key}")
+                    logger.info(
+                        "File ingestion complete | file_name=%s | file_type=%s | destination=%s | processing_time_seconds=%.2f",
+                        key,
+                        file_type,
+                        staging_key,
+                        perf_counter() - file_started_at,
+                    )
                     send_email_notification(key, 'success', f"Moved to {STAGING_BUCKET}/{staging_key}")
                     send_teams_notification(key, 'success', f"Moved to STAGING bucket")
                     processed_count += 1
                 else:
-                    logger.error(f"✗ Move failed: {key}")
+                    logger.error(
+                        "File ingestion failed | file_name=%s | file_type=%s | processing_time_seconds=%.2f | error=Move operation failed",
+                        key,
+                        file_type,
+                        perf_counter() - file_started_at,
+                    )
                     send_email_notification(key, 'failure', "Move operation failed")
                     send_teams_notification(key, 'failure', "Move operation failed")
                     failed_count += 1
         
-        # Summary notification
-        logger.info("\n" + "="*70)
-        logger.info(f"✓ Phase 3 Complete: {processed_count} files processed, {failed_count} failed")
-        logger.info("="*70 + "\n")
+        logger.info(
+            "Pipeline completion | stage=phase_3_ingestion | processed_files=%s | failed_files=%s | processing_time_seconds=%.2f",
+            processed_count,
+            failed_count,
+            perf_counter() - pipeline_started_at,
+        )
         
         return processed_count, failed_count
     
     except Exception as e:
-        logger.error(f"❌ Ingestion failed: {e}")
+        logger.exception("Pipeline failure | stage=phase_3_ingestion | error=%s", e)
         return 0, 1
 
 

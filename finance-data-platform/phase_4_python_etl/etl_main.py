@@ -1,31 +1,26 @@
-"""
-Phase 4: Python ETL Pipeline
-Extracts data from S3 staging (CSV, JSON, XLSX),
-transforms and loads into PostgreSQL staging schema.
-Resilient to schema mismatches and handles NULLs correctly.
+"""Phase 4 ETL pipeline with integrated logging and data-quality validation."""
 
-FOLDER STRUCTURE PRESERVATION:
-  Raw bucket:     automotive-raw-data-lerato-2026/erp/sales/sales_file.csv
-       ↓ (moved with full path)
-  Staging bucket: automotive-staging-data-lerato-2026/erp/sales/sales_file.csv
-       ↓ (table inferred from filename: sales → stg_sales)
-  Database:       staging.stg_sales
-       ↓ (processed)
-  Archive bucket: automotive-archive-data-lerato-2026/erp/sales/sales_file_timestamp.csv
+from __future__ import annotations
 
-Folder structure (erp/, crm/, finance/, suppliers_chain/, iot/) is maintained
-throughout the pipeline for data organization and traceability.
-"""
-
+import json
 import os
+import re
+import sys
+from io import BytesIO
+from pathlib import Path
+from time import perf_counter
+
 import boto3
 import pandas as pd
-from io import BytesIO
 import psycopg2
-import json
-import re
-from pathlib import Path
 from psycopg2.extras import execute_values
+
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from phase_8_monitoring_logging.logging.logging_config import configure_pipeline_logger, log_quality_metrics
 
 
 # ----------------------------
@@ -43,6 +38,8 @@ def load_env_file(env_path):
 
 load_env_file('warehouse_conn.env')
 
+LOGGER = configure_pipeline_logger("phase_4_python_etl")
+
 
 # ----------------------------
 # CONFIG
@@ -56,6 +53,28 @@ INCREMENTAL = os.getenv('INCREMENTAL', 'false').lower() == 'true'
 CURRENT_RUN_STAGING_KEYS = os.getenv('CURRENT_RUN_STAGING_KEYS', '')
 
 s3 = boto3.client('s3')
+
+QUALITY_RULES = {
+    'stg_customers': {'required_columns': ['customer_id', 'email'], 'critical_columns': ['customer_id']},
+    'stg_dealers': {'required_columns': ['dealer_id'], 'critical_columns': ['dealer_id']},
+    'stg_vehicles': {'required_columns': ['vehicle_id', 'dealer_id'], 'critical_columns': ['vehicle_id']},
+    'stg_sales': {'required_columns': ['sale_id', 'sale_date'], 'critical_columns': ['sale_id', 'sale_date']},
+    'stg_inventory': {'required_columns': ['inventory_id', 'vehicle_id'], 'critical_columns': ['inventory_id']},
+    'stg_payments': {'required_columns': ['payment_id', 'payment_date'], 'critical_columns': ['payment_id', 'payment_date']},
+    'stg_suppliers': {'required_columns': ['supplier_id'], 'critical_columns': ['supplier_id']},
+    'stg_procurement': {'required_columns': ['procurement_id', 'supplier_id'], 'critical_columns': ['procurement_id', 'supplier_id']},
+    'stg_interactions': {'required_columns': ['interaction_id', 'customer_id'], 'critical_columns': ['interaction_id', 'customer_id']},
+    'stg_telemetry': {'required_columns': ['telemetry_id', 'timestamp'], 'critical_columns': ['telemetry_id', 'timestamp']},
+}
+
+
+def detect_file_type(key):
+    extension_map = {
+        '.csv': 'CSV',
+        '.json': 'JSON',
+        '.xlsx': 'Excel',
+    }
+    return extension_map.get(Path(key).suffix.lower(), 'Unknown')
 
 
 # ----------------------------
@@ -98,11 +117,11 @@ def parse_current_run_staging_keys():
     try:
         parsed = json.loads(CURRENT_RUN_STAGING_KEYS)
     except json.JSONDecodeError:
-        print('[ETL][WARN] CURRENT_RUN_STAGING_KEYS is not valid JSON. Falling back to full staging scan.')
+        LOGGER.warning('CURRENT_RUN_STAGING_KEYS is not valid JSON. Falling back to full staging scan.')
         return []
 
     if not isinstance(parsed, list):
-        print('[ETL][WARN] CURRENT_RUN_STAGING_KEYS must be a list. Falling back to full staging scan.')
+        LOGGER.warning('CURRENT_RUN_STAGING_KEYS must be a list. Falling back to full staging scan.')
         return []
 
     return [key for key in parsed if isinstance(key, str) and key.endswith(('.csv', '.json', '.xlsx'))]
@@ -111,7 +130,7 @@ def parse_current_run_staging_keys():
 def list_staging_files():
     current_run_keys = parse_current_run_staging_keys()
     if current_run_keys:
-        print(f"[ETL] Using {len(current_run_keys)} staged file(s) from the current DAG run.")
+        LOGGER.info("Using %s staged file(s) from the current DAG run.", len(current_run_keys))
         return current_run_keys
 
     paginator = s3.get_paginator('list_objects_v2')
@@ -122,7 +141,7 @@ def list_staging_files():
 
     valid = [f for f in files if f.endswith(('.csv', '.json', '.xlsx'))]
 
-    print(f"[ETL] Found {len(valid)} valid files.")
+    LOGGER.info("Found %s valid staging file(s).", len(valid))
     return valid
 
 
@@ -232,7 +251,6 @@ def normalize_column_aliases(df, table_key):
 # TRANSFORM
 # ----------------------------
 def transform(df, table_key):
-
     df = df.drop_duplicates()
     df = df.dropna(how='all')
     df = normalize_column_aliases(df, table_key)
@@ -294,6 +312,47 @@ def transform(df, table_key):
     return df
 
 
+def evaluate_data_quality(df, table_key, target_columns):
+    rules = QUALITY_RULES.get(table_key, {'required_columns': [], 'critical_columns': []})
+    duplicate_records = int(df.duplicated().sum())
+    null_value_counts = {column: int(df[column].isna().sum()) for column in df.columns}
+    total_null_values = int(sum(null_value_counts.values()))
+    required_columns = rules['required_columns']
+    missing_required_columns = [column for column in required_columns if column not in df.columns]
+    critical_null_violations = {
+        column: null_value_counts[column]
+        for column in rules['critical_columns']
+        if column in null_value_counts and null_value_counts[column] > 0
+    }
+    shared_columns = sorted(set(df.columns) & set(target_columns))
+    unexpected_columns = sorted(set(df.columns) - set(target_columns))
+    schema_validation = {
+        'shared_columns': len(shared_columns),
+        'missing_required_columns': missing_required_columns,
+        'unexpected_columns': unexpected_columns,
+        'is_valid': bool(shared_columns) and not missing_required_columns,
+    }
+
+    validation_errors = []
+    if duplicate_records > 0:
+        validation_errors.append(f'duplicate records detected: {duplicate_records}')
+    if missing_required_columns:
+        validation_errors.append(f'missing required columns: {missing_required_columns}')
+    if critical_null_violations:
+        validation_errors.append(f'critical null violations: {critical_null_violations}')
+    if not schema_validation['is_valid'] and not missing_required_columns:
+        validation_errors.append('schema validation failed because no target columns matched the extracted file')
+
+    return {
+        'row_count': int(len(df)),
+        'total_null_values': total_null_values,
+        'null_value_counts': null_value_counts,
+        'duplicate_records': duplicate_records,
+        'schema_validation': schema_validation,
+        'validation_errors': validation_errors,
+    }
+
+
 # ----------------------------
 # GET TABLE COLUMNS
 # ----------------------------
@@ -321,7 +380,7 @@ def upsert(df, table_key, conn):
         clean_df = df[df['is_dirty'] == False].copy()
         dirty_count = len(df) - len(clean_df)
         if dirty_count > 0:
-            print(f"[ETL] Filtered {dirty_count} dirty records from {table_name}")
+            LOGGER.info("Filtered %s dirty record(s) from staging.%s", dirty_count, table_name)
         df = clean_df
 
     # Get table columns from database
@@ -331,7 +390,7 @@ def upsert(df, table_key, conn):
     df = df[[c for c in df.columns if c in table_columns]]
 
     if df.empty:
-        print("[ETL] No matching columns after alignment.")
+        LOGGER.info("No matching columns remained after target-table alignment for staging.%s", table_name)
         return 0
 
     cols = list(df.columns)
@@ -403,53 +462,120 @@ def infer_table(key):
 # MAIN
 # ----------------------------
 def main():
-
+    run_started_at = perf_counter()
     files = list_staging_files()
+    run_summary = {
+        'pipeline_name': 'automotive_finance_pipeline',
+        'files_processed': 0,
+        'rows_loaded': 0,
+        'processing_time_seconds': 0.0,
+        'quality_summary': {
+            'files_checked': 0,
+            'duplicate_records': 0,
+            'total_null_values': 0,
+            'schema_failures': 0,
+        },
+        'file_metrics': [],
+        'errors': [],
+    }
 
     if not files:
-        print("[ETL] No files found.")
+        LOGGER.info("Pipeline completion | stage=phase_4_etl | files_processed=0 | rows_loaded=0 | processing_time_seconds=0.0")
+        print(f"ETL_SUMMARY::{json.dumps(run_summary)}")
         return
 
-    for key in files:
+    LOGGER.info("Pipeline start | stage=phase_4_etl | file_count=%s", len(files))
 
-        conn = psycopg2.connect(WAREHOUSE_CONN)
-
-        # Ensure correct schema context
+    with psycopg2.connect(WAREHOUSE_CONN) as conn:
         with conn.cursor() as cur:
             cur.execute("SET search_path TO staging")
-        conn.commit()
 
-        try:
-            print(f"[ETL] Processing {key}")
+        for key in files:
+            file_started_at = perf_counter()
+            file_type = detect_file_type(key)
 
-            table_key = infer_table(key)
+            try:
+                table_key = infer_table(key)
+                if table_key not in TABLE_MAP:
+                    raise ValueError(f"No table mapping found for inferred table key {table_key}")
 
-            if table_key not in TABLE_MAP:
-                print(f"[ETL][SKIP] No mapping for {table_key}")
-                continue
+                LOGGER.info("File processing start | file_name=%s | file_type=%s | inferred_table=%s", key, file_type, table_key)
 
-            df = extract_file(key)
-            print(f"[ETL] Extracted {len(df)} records.")
+                raw_df = extract_file(key)
+                normalized_df = normalize_column_aliases(raw_df.copy(), table_key)
+                target_columns = get_table_columns(conn, TABLE_MAP[table_key])
+                quality_metrics = evaluate_data_quality(normalized_df, table_key, target_columns)
 
-            df = transform(df, table_key)
+                run_summary['quality_summary']['files_checked'] += 1
+                run_summary['quality_summary']['duplicate_records'] += quality_metrics['duplicate_records']
+                run_summary['quality_summary']['total_null_values'] += quality_metrics['total_null_values']
+                if not quality_metrics['schema_validation']['is_valid']:
+                    run_summary['quality_summary']['schema_failures'] += 1
 
-            if df.empty:
-                print("[ETL] No valid rows after transform.")
-                continue
+                log_quality_metrics(
+                    LOGGER,
+                    file_name=key,
+                    file_type=file_type,
+                    table_name=TABLE_MAP[table_key],
+                    metrics=quality_metrics,
+                )
 
-            inserted = upsert(df, table_key, conn)
+                if quality_metrics['validation_errors']:
+                    raise ValueError(
+                        f"Data quality validation failed for {key}: {'; '.join(quality_metrics['validation_errors'])}"
+                    )
 
-            update_metadata(table_key, inserted, conn)
+                transformed_df = transform(normalized_df, table_key)
+                if transformed_df.empty:
+                    raise ValueError(f"No valid rows remained after transform for {key}")
 
-            print(f"[ETL] Loaded {inserted} rows into staging.{TABLE_MAP[table_key]}")
+                inserted = upsert(transformed_df, table_key, conn)
+                update_metadata(table_key, inserted, conn)
 
-        except Exception as e:
-            print(f"[ETL][ERROR] {e}")
+                file_duration = round(perf_counter() - file_started_at, 2)
+                run_summary['files_processed'] += 1
+                run_summary['rows_loaded'] += inserted
+                run_summary['file_metrics'].append({
+                    'file_name': key,
+                    'file_type': file_type,
+                    'table_name': TABLE_MAP[table_key],
+                    'rows_processed': inserted,
+                    'processing_time_seconds': file_duration,
+                })
 
-        finally:
-            conn.close()
+                LOGGER.info(
+                    "File processing complete | file_name=%s | file_type=%s | rows_processed=%s | processing_time_seconds=%.2f",
+                    key,
+                    file_type,
+                    inserted,
+                    file_duration,
+                )
 
-    print("[ETL] ETL run complete.")
+            except Exception as exc:
+                run_summary['errors'].append({'file_name': key, 'error': str(exc)})
+                LOGGER.exception(
+                    "File processing failed | file_name=%s | file_type=%s | processing_time_seconds=%.2f | error=%s",
+                    key,
+                    file_type,
+                    perf_counter() - file_started_at,
+                    exc,
+                )
+
+    run_summary['processing_time_seconds'] = round(perf_counter() - run_started_at, 2)
+    LOGGER.info(
+        "Pipeline completion | stage=phase_4_etl | files_processed=%s | rows_loaded=%s | processing_time_seconds=%.2f | errors=%s",
+        run_summary['files_processed'],
+        run_summary['rows_loaded'],
+        run_summary['processing_time_seconds'],
+        len(run_summary['errors']),
+    )
+    print(f"ETL_SUMMARY::{json.dumps(run_summary)}")
+
+    if run_summary['errors']:
+        raise RuntimeError(
+            "ETL run failed due to validation or processing errors: "
+            + "; ".join(f"{item['file_name']}: {item['error']}" for item in run_summary['errors'])
+        )
 
 
 if __name__ == "__main__":
